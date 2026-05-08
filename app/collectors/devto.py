@@ -16,6 +16,9 @@ DEVTO_API_URL = "https://dev.to/api/articles"
 DEVTO_TAGS = ["ai", "machinelearning", "llm"]
 
 
+from app.utils.retry import async_retry
+
+@async_retry(max_retries=3, backoff_factor=2, initial_delay=2)
 async def fetch_devto_articles() -> List[NewsItem]:
     """Fetch AI/ML articles from DEV.to community."""
     items = []

@@ -8,6 +8,7 @@ import httpx
 from app.config.settings import get_settings
 from app.graph.state import NewsItem
 from app.utils.logger import get_logger
+from app.utils.retry import async_retry
 
 logger = get_logger(__name__)
 
@@ -62,6 +63,7 @@ async def _summarize_with_groq(item: NewsItem, api_key: str, model: str) -> str:
     return data["choices"][0]["message"]["content"].strip()
 
 
+@async_retry(max_retries=3, backoff_factor=2, initial_delay=2)
 async def summarize_batch(items: List[NewsItem]) -> List[str]:
     """Summarize news with Groq. Falls back to deterministic placeholders."""
     settings = get_settings()

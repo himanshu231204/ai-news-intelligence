@@ -14,6 +14,9 @@ logger = logging.getLogger(__name__)
 PRODUCTHUNT_RSS_URL = "https://www.producthunt.com/feed?category=artificial-intelligence"
 
 
+from app.utils.retry import async_retry
+
+@async_retry(max_retries=3, backoff_factor=2, initial_delay=2)
 async def fetch_producthunt_tools() -> List[NewsItem]:
     """Fetch new AI tools from ProductHunt."""
     items = []

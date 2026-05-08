@@ -14,6 +14,9 @@ HN_SEARCH_URL = "https://hn.algolia.com/api/v1/search"
 KEYWORDS = ["AI", "machine learning", "LLM", "GPT", "neural", "transformer", "deep learning"]
 
 
+from app.utils.retry import async_retry
+
+@async_retry(max_retries=3, backoff_factor=2, initial_delay=2)
 async def fetch_hackernews() -> List[NewsItem]:
     """Fetch top AI news from Hacker News."""
     items = []

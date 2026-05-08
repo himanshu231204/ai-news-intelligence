@@ -1,5 +1,31 @@
 ﻿from __future__ import annotations
 
+from typing import Iterable
+
+from app.config.settings import get_settings
+from app.memory.chroma_store import upsert_vectors as _chroma_upsert
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
+
+def upsert_vectors(documents: Iterable[str]) -> None:
+    """Legacy wrapper that upserts raw documents using the persistent Chroma store.
+
+    If embeddings are disabled via ``use_embeddings=False``, this becomes a no‑op.
+    """
+    if not get_settings().use_embeddings:
+        logger.info("Embeddings disabled – skipping vector upsert.")
+        return
+    try:
+        # Convert to list to allow length logging after consumption
+        docs = list(documents)
+        if not docs:
+            return
+        _chroma_upsert(docs)
+        logger.info("Upserted %d documents to Chroma store.", len(docs))
+    except Exception as e:
+        logger.error("Failed to upsert vectors: %s", e)
+
 import os
 from typing import Iterable, List, Dict, Any
 

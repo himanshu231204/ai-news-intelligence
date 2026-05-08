@@ -21,6 +21,9 @@ AI_SUBREDDITS = [
 ]
 
 
+from app.utils.retry import async_retry
+
+@async_retry(max_retries=3, backoff_factor=2, initial_delay=2)
 async def fetch_reddit() -> List[NewsItem]:
     """Fetch AI news from Reddit subreddits."""
     items = []

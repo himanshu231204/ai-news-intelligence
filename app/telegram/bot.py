@@ -3,6 +3,7 @@
 from textwrap import wrap
 
 import requests
+from app.utils.retry import sync_retry
 
 from app.config.settings import get_settings
 from app.utils.logger import get_logger
@@ -10,6 +11,7 @@ from app.utils.logger import get_logger
 logger = get_logger(__name__)
 
 
+@sync_retry(max_retries=3, backoff_factor=2, initial_delay=2)
 def send_newsletter(message: str) -> None:
     """Send newsletter message to configured Telegram chat.
 
