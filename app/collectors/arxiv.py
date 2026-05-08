@@ -24,6 +24,7 @@ ARXIV_CATEGORIES = [
 
 from app.utils.retry import async_retry
 
+
 @async_retry(max_retries=3, backoff_factor=2, initial_delay=2)
 async def fetch_arxiv_papers() -> List[NewsItem]:
     """Fetch latest AI/ML research papers from ArXiv."""
@@ -45,7 +46,7 @@ async def fetch_arxiv_papers() -> List[NewsItem]:
                             "max_results": 5,
                             "sortBy": "submittedDate",
                             "sortOrder": "descending",
-                        }
+                        },
                     )
                     response.raise_for_status()
 
@@ -60,15 +61,25 @@ async def fetch_arxiv_papers() -> List[NewsItem]:
                             id_elem = entry.find("atom:id", namespace)
                             summary_elem = entry.find("atom:summary", namespace)
                             published_elem = entry.find("atom:published", namespace)
-                            authors_elem = entry.findall("atom:author/atom:name", namespace)
+                            authors_elem = entry.findall(
+                                "atom:author/atom:name", namespace
+                            )
 
                             if title_elem is None or id_elem is None:
                                 continue
 
                             title = title_elem.text.strip().replace("\n", " ")
                             arxiv_id = id_elem.text.split("/abs/")[-1]
-                            summary = summary_elem.text.strip() if summary_elem is not None else ""
-                            published = published_elem.text if published_elem is not None else ""
+                            summary = (
+                                summary_elem.text.strip()
+                                if summary_elem is not None
+                                else ""
+                            )
+                            published = (
+                                published_elem.text
+                                if published_elem is not None
+                                else ""
+                            )
                             authors = [a.text for a in authors_elem]
 
                             item = NewsItem(
@@ -76,19 +87,21 @@ async def fetch_arxiv_papers() -> List[NewsItem]:
                                 url=f"https://arxiv.org/abs/{arxiv_id}",
                                 source="ArXiv",
                                 summary=summary[:400],
-                                published_at=datetime.fromisoformat(published.replace("Z", "+00:00")),
+                                published_at=datetime.fromisoformat(
+                                    published.replace("Z", "+00:00")
+                                ),
                                 raw_text=f"Authors: {', '.join(authors[:3])}. {summary[:200]}",
                                 metadata={
                                     "arxiv_id": arxiv_id,
                                     "category": category,
                                     "authors": authors,
-                                }
+                                },
                             )
                             items.append(item)
                         except Exception as e:
                             logger.warning(f"Error parsing ArXiv entry: {e}")
                             continue
-                    
+
                     # Add small delay to avoid rate limiting
                     await asyncio.sleep(0.5)
 
@@ -105,3 +118,7 @@ async def fetch_arxiv_papers() -> List[NewsItem]:
 
     logger.info(f"Collected {len(items)} papers from ArXiv")
     return items
+
+
+# Backward compatibility alias
+fetch_arxiv = fetch_arxiv_papers

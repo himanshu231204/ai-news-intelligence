@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import logging
 from typing import List
@@ -6,6 +6,7 @@ from datetime import datetime
 import feedparser
 
 from app.graph.state import NewsItem
+from app.utils.company_detector import enrich_news_item, is_negative_content
 
 logger = logging.getLogger(__name__)
 
@@ -23,32 +24,50 @@ AI_RSS_FEEDS = [
 
 from app.utils.retry import async_retry
 
+
 @async_retry(max_retries=3, backoff_factor=2, initial_delay=2)
 async def fetch_rss() -> List[NewsItem]:
-    """Fetch AI news from RSS feeds."""
+    """Fetch AI news from RSS feeds with company detection."""
     items = []
-    
+
     for feed_url in AI_RSS_FEEDS:
         try:
             logger.info(f"Fetching RSS from {feed_url}")
             feed = feedparser.parse(feed_url)
-            
+
             if feed.bozo:
-                logger.warning(f"Feed parsing warning for {feed_url}: {feed.bozo_exception}")
-            
+                logger.warning(
+                    f"Feed parsing warning for {feed_url}: {feed.bozo_exception}"
+                )
+
             for entry in feed.entries[:5]:  # Get top 5 from each feed
+                title = entry.get("title", "No title")
+                summary = entry.get("summary", "")[:500]
+
+                # Skip negative content
+                if is_negative_content(title, summary):
+                    continue
+
+                # Enrich with company detection
+                enrichment = enrich_news_item(title, summary)
+
                 item = NewsItem(
-                    title=entry.get("title", "No title"),
+                    title=title,
                     url=entry.get("link", ""),
                     source=feed.feed.get("title", "RSS Feed"),
-                    summary=entry.get("summary", "")[:500],
+                    summary=summary,
                     published_at=datetime.now(),
                     raw_text=entry.get("summary", ""),
+                    # New fields
+                    company=enrichment["company"],
+                    category=enrichment["category"],
+                    importance_score=enrichment["importance_score"],
+                    tags=enrichment["tags"],
                 )
                 items.append(item)
-                
+
         except Exception as e:
             logger.error(f"Error fetching RSS feed {feed_url}: {e}")
-    
+
     logger.info(f"Collected {len(items)} items from RSS feeds")
     return items
