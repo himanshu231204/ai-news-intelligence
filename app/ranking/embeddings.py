@@ -1,6 +1,7 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import os
+from functools import lru_cache
 from typing import Iterable, List
 
 from langchain_huggingface import HuggingFaceEmbeddings
@@ -11,15 +12,19 @@ from app.utils.logger import get_logger
 logger = get_logger(__name__)
 
 
+@lru_cache(maxsize=1)
 def get_embeddings_model():
-    """Get embeddings model using free HuggingFace (no API key required)."""
+    """Get embeddings model using free HuggingFace (no API key required).
+
+    Cached to avoid repeated model loading during deduplication.
+    """
     try:
         settings = get_settings()
         logger.info("Loading HuggingFace embeddings (free, no API key needed)")
         # Using a small, fast local model by default.
         embeddings = HuggingFaceEmbeddings(
             model_name=settings.embedding_model,
-            model_kwargs={"trust_remote_code": True}
+            model_kwargs={"trust_remote_code": True},
         )
         logger.info("HuggingFace embeddings ready")
         return embeddings
