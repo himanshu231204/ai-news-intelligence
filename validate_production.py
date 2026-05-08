@@ -296,7 +296,7 @@ def validate_database() -> bool:
 async def main():
     """Run all validations"""
     print(f"\n{BLUE}{'='*60}{RESET}")
-    print(f"{BLUE}🚀 AI News Research Agent - Production Validation{RESET}")
+    print(f"{BLUE}[PROD] AI News Research Agent - Production Validation{RESET}")
     print(f"{BLUE}{'='*60}{RESET}")
     
     checks = [
