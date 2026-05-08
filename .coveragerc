@@ -1,0 +1,34 @@
+[run]
+# Coverage configuration
+source = app
+branch = True
+omit =
+    */tests/*
+    */test_*.py
+    setup.py
+    */__pycache__/*
+    */.venv/*
+    */venv/*
+
+[report]
+# Coverage reporting
+precision = 2
+show_missing = True
+skip_covered = False
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    raise AssertionError
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    if TYPE_CHECKING:
+    @abstractmethod
+    @abstract.abstractmethod
+
+[html]
+# HTML coverage report
+directory = coverage_html_report
+
+[xml]
+# XML coverage report for CI
+output = coverage.xml
