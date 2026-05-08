@@ -21,17 +21,40 @@
 
 ## 📊 Architecture
 
-```
-Sources (8) → Collect → Merge → Deduplicate → Filter → Rank → Summarize → Generate → Send
-    ↓          ↓         ↓          ↓          ↓       ↓        ↓         ↓      ↓
-  GitHub      Async   Normalize  ChromaDB   Quality  Score  LangChain  Format Telegram
-  Hacker News                    (embeddings) Check  (LLM)  Summarizer
-  Reddit
-  RSS
-  arXiv
-  Dev.to
-  Product Hunt
-  Twitter
+```mermaid
+flowchart LR
+  subgraph Sources["Sources (8)"]
+    GitHub[GitHub]
+    HN[Hacker News]
+    Reddit[Reddit]
+    RSS[RSS]
+    Arxiv[arXiv]
+    Devto[Dev.to]
+    ProductHunt[Product Hunt]
+    Twitter[Twitter]
+  end
+
+  Collect[Collect\nAsync ingestion] --> Merge[Merge\nNormalize records]
+  Merge --> Deduplicate[Deduplicate\nChromaDB + embeddings]
+  Deduplicate --> Filter[Filter\nQuality checks]
+  Filter --> Rank[Rank\nScore + prioritize]
+  Rank --> Summarize[Summarize\nLangChain + Groq]
+  Summarize --> Generate[Generate\nNewsletter formatter]
+  Generate --> Send[Send\nTelegram delivery]
+
+  GitHub --> Collect
+  HN --> Collect
+  Reddit --> Collect
+  RSS --> Collect
+  Arxiv --> Collect
+  Devto --> Collect
+  ProductHunt --> Collect
+  Twitter --> Collect
+
+  style Collect fill:#0f766e,stroke:#14b8a6,color:#ffffff
+  style Deduplicate fill:#1d4ed8,stroke:#60a5fa,color:#ffffff
+  style Summarize fill:#7c3aed,stroke:#c084fc,color:#ffffff
+  style Send fill:#b45309,stroke:#f59e0b,color:#ffffff
 ```
 
 **Tech Stack**:

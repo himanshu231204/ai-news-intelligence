@@ -40,8 +40,6 @@ def filter_low_quality_node(state: NewsState) -> NewsState:
         f"Avg importance: {stats['avg_importance_before']} -> {stats['avg_importance_after']}"
     )
 
-    # Build new state
-    new_state = dict(state)
-    new_state["filtered_news"] = ranked_items
-
-    return new_state
+    # Update state
+    state.filtered_news = ranked_items
+    return state

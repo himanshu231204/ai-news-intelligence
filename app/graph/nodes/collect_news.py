@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import asyncio
 
@@ -15,7 +15,16 @@ from app.graph.state import NewsState
 
 async def collect_news_node(state: NewsState) -> NewsState:
     """Collect from all sources in parallel."""
-    rss_news, github_news, hn_news, reddit_news, twitter_news, arxiv_news, devto_news, ph_news = await asyncio.gather(
+    (
+        rss_news,
+        github_news,
+        hn_news,
+        reddit_news,
+        twitter_news,
+        arxiv_news,
+        devto_news,
+        ph_news,
+    ) = await asyncio.gather(
         fetch_rss(),
         fetch_github_trending(),
         fetch_hackernews(),
@@ -28,14 +37,23 @@ async def collect_news_node(state: NewsState) -> NewsState:
     )
 
     collected = []
-    errors = list(state["errors"])
-    for result in (rss_news, github_news, hn_news, reddit_news, twitter_news, arxiv_news, devto_news, ph_news):
+    errors = list(state.errors)
+    for result in (
+        rss_news,
+        github_news,
+        hn_news,
+        reddit_news,
+        twitter_news,
+        arxiv_news,
+        devto_news,
+        ph_news,
+    ):
         if isinstance(result, Exception):
             errors.append(str(result))
             continue
         collected.extend(result)
 
-    new_state = dict(state)
-    new_state["raw_news"] = collected
-    new_state["errors"] = errors
-    return new_state
+    # Return updated state
+    state.raw_news = collected
+    state.errors = errors
+    return state
