@@ -1,0 +1,70 @@
+from __future__ import annotations
+
+import logging
+from typing import List
+from datetime import datetime
+import httpx
+
+from app.graph.state import NewsItem
+
+logger = logging.getLogger(__name__)
+
+# DEV.to API
+DEVTO_API_URL = "https://dev.to/api/articles"
+
+# AI-related tags
+DEVTO_TAGS = ["ai", "machinelearning", "llm"]
+
+
+async def fetch_devto_articles() -> List[NewsItem]:
+    """Fetch AI/ML articles from DEV.to community."""
+    items = []
+
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            for tag in DEVTO_TAGS:
+                try:
+                    logger.info(f"Fetching DEV.to articles with tag: {tag}")
+
+                    response = await client.get(
+                        DEVTO_API_URL,
+                        params={
+                            "tag": tag,
+                            "per_page": 5,
+                            "state": "fresh",  # Recent articles
+                        }
+                    )
+                    response.raise_for_status()
+                    articles = response.json()
+
+                    for article in articles[:3]:  # Top 3 per tag
+                        try:
+                            item = NewsItem(
+                                title=article.get("title", "No title"),
+                                url=article.get("url", ""),
+                                source=f"DEV.to ({tag})",
+                                summary=article.get("description", "")[:400],
+                                published_at=datetime.fromisoformat(
+                                    article.get("published_at", datetime.now().isoformat()).replace("Z", "+00:00")
+                                ),
+                                raw_text=article.get("description", ""),
+                                metadata={
+                                    "author": article.get("user", {}).get("name", "Unknown"),
+                                    "tags": article.get("tag_list", []),
+                                    "reactions": article.get("reactions_count", 0),
+                                    "comments": article.get("comments_count", 0),
+                                }
+                            )
+                            items.append(item)
+                        except Exception as e:
+                            logger.warning(f"Error parsing DEV.to article: {e}")
+                            continue
+
+                except httpx.RequestError as e:
+                    logger.error(f"DEV.to API error for tag '{tag}': {e}")
+
+    except Exception as e:
+        logger.error(f"Error fetching DEV.to articles: {e}")
+
+    logger.info(f"Collected {len(items)} articles from DEV.to")
+    return items

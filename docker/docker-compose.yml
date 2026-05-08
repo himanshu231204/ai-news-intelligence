@@ -1,0 +1,88 @@
+version: '3.8'
+
+services:
+  # PostgreSQL database
+  postgres:
+    image: postgres:15-alpine
+    container_name: news_agent_postgres
+    environment:
+      POSTGRES_DB: news_agent
+      POSTGRES_USER: news_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U news_user -d news_agent"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - news_agent_network
+
+  # News Agent (Scheduler mode)
+  news_agent:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: news_agent_scheduler
+    environment:
+      MODE: scheduler
+      LOG_LEVEL: INFO
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      LANGCHAIN_API_KEY: ${LANGCHAIN_API_KEY}
+      LANGCHAIN_TRACING_V2: "true"
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
+      POSTGRES_URL: postgresql+psycopg://news_user:${POSTGRES_PASSWORD:-changeme}@postgres:5432/news_agent
+      CHROMA_PATH: /app/chroma_data
+      NEWSLETTER_HOUR: ${NEWSLETTER_HOUR:-9}
+      NEWSLETTER_MINUTE: ${NEWSLETTER_MINUTE:-0}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./chroma_data:/app/chroma_data
+      - ./logs:/app/logs
+    networks:
+      - news_agent_network
+    restart: unless-stopped
+
+  # Telegram Bot (Optional - run separately if needed)
+  telegram_bot:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: news_agent_telegram_bot
+    environment:
+      MODE: bot
+      LOG_LEVEL: INFO
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      LANGCHAIN_API_KEY: ${LANGCHAIN_API_KEY}
+      LANGCHAIN_TRACING_V2: "true"
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
+      POSTGRES_URL: postgresql+psycopg://news_user:${POSTGRES_PASSWORD:-changeme}@postgres:5432/news_agent
+      CHROMA_PATH: /app/chroma_data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./chroma_data:/app/chroma_data
+      - ./logs:/app/logs
+    networks:
+      - news_agent_network
+    restart: unless-stopped
+    profiles:
+      - bot  # Only start with: docker-compose --profile bot up
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  news_agent_network:
+    driver: bridge
