@@ -5,3 +5,4 @@ __pycache__/
 .env
 newsletter.db
 chroma_data/
+dev_utils/
