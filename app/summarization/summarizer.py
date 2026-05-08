@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 from typing import List
@@ -14,8 +14,8 @@ logger = get_logger(__name__)
 
 
 def _fallback_summary(item: NewsItem) -> str:
-    title = item.get("title", "Untitled")
-    source = item.get("source", "unknown")
+    title = item.title or "Untitled"
+    source = item.source or "unknown"
     return (
         f"Title: {title}\n"
         "Summary: Placeholder summary due to unavailable model response.\n"
@@ -25,9 +25,9 @@ def _fallback_summary(item: NewsItem) -> str:
 
 
 async def _summarize_with_groq(item: NewsItem, api_key: str, model: str) -> str:
-    title = item.get("title", "Untitled")
-    source = item.get("source", "unknown")
-    url = item.get("url", "")
+    title = item.title or "Untitled"
+    source = item.source or "unknown"
+    url = item.url or ""
     prompt = (
         "Return exactly this format with concise text and no markdown:\n"
         "Title:\nSummary:\nWhy it matters:\nSource:\n\n"
@@ -75,9 +75,13 @@ async def summarize_batch(items: List[NewsItem]) -> List[str]:
     summaries = []
     for item in items:
         try:
-            summary = await _summarize_with_groq(item, settings.groq_api_key, settings.groq_model)
+            summary = await _summarize_with_groq(
+                item, settings.groq_api_key, settings.groq_model
+            )
         except Exception as exc:  # noqa: BLE001
-            logger.warning("Groq summarization failed for '%s': %s", item.get("title", "Untitled"), exc)
+            logger.warning(
+                "Groq summarization failed for '%s': %s", item.title or "Untitled", exc
+            )
             summary = _fallback_summary(item)
         summaries.append(summary)
 

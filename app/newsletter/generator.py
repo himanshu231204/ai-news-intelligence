@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from datetime import date, datetime
 import re
@@ -13,13 +13,8 @@ from app.newsletter.prompts import NEWSLETTER_GENERATION_PROMPT
 
 def _parse_summary(summary: str) -> dict:
     """Parse summary into components."""
-    parts = {
-        "title": "",
-        "summary": "",
-        "why_it_matters": "",
-        "source": ""
-    }
-    
+    parts = {"title": "", "summary": "", "why_it_matters": "", "source": ""}
+
     for line in summary.split("\n"):
         if line.startswith("Title:"):
             parts["title"] = line.replace("Title:", "").strip()
@@ -29,7 +24,7 @@ def _parse_summary(summary: str) -> dict:
             parts["why_it_matters"] = line.replace("Why it matters:", "").strip()
         elif line.startswith("Source:"):
             parts["source"] = line.replace("Source:", "").strip()
-    
+
     # Remove any footer-like lines that may be present in summaries
     parts["title"] = _strip_footer(parts["title"])
     parts["summary"] = _strip_footer(parts["summary"])
@@ -52,19 +47,19 @@ def _strip_footer(text: str) -> str:
     for line in text.splitlines():
         low = line.lower().strip()
         if (
-            'linkedin.com' in low
-            or 'github.com' in low
-            or 'follow me' in low
-            or 'powered by' in low
-            or low.startswith('follow for')
+            "linkedin.com" in low
+            or "github.com" in low
+            or "follow me" in low
+            or "powered by" in low
+            or low.startswith("follow for")
         ):
             continue
         # also drop short standalone links that look like footers
-        if low.startswith('http') and ('linkedin' in low or 'github' in low):
+        if low.startswith("http") and ("linkedin" in low or "github" in low):
             continue
         lines.append(line)
 
-    return '\n'.join(lines).strip()
+    return "\n".join(lines).strip()
 
 
 def _format_article(counter: int, parsed: dict, emoji: str = "") -> str:
@@ -79,8 +74,8 @@ def _format_article(counter: int, parsed: dict, emoji: str = "") -> str:
 
     # Shorten summary to first sentence if very long
     first_sentence = summary.split(". ")[0].strip()
-    if first_sentence and not first_sentence.endswith('.'):
-        first_sentence = first_sentence + '.'
+    if first_sentence and not first_sentence.endswith("."):
+        first_sentence = first_sentence + "."
 
     line = f"{counter}. {emoji} {title} — {first_sentence} ({source})\n"
     return line
@@ -88,13 +83,13 @@ def _format_article(counter: int, parsed: dict, emoji: str = "") -> str:
 
 def build_newsletter(items: List[NewsItem], summaries: List[str]) -> str:
     """Build a professionally formatted newsletter matching enterprise standards."""
-    
+
     # Format date: Saturday, May 09, 2026
     today = datetime.now()
     day_name = today.strftime("%A")
     date_str = today.strftime("%B %d, %Y")
     formatted_date = f"{day_name}, {date_str}"
-    
+
     # Header
     header = (
         "AI INTELLIGENCE DAILY BRIEF\n"
@@ -102,7 +97,7 @@ def build_newsletter(items: List[NewsItem], summaries: List[str]) -> str:
         "Daily intelligence covering the most important developments\n"
         "in artificial intelligence, research, and technology.\n\n\n"
     )
-    
+
     # Parse and pair summaries with items
     valid_pairs = []
     for i, summary in enumerate(summaries):
@@ -119,19 +114,18 @@ def build_newsletter(items: List[NewsItem], summaries: List[str]) -> str:
             article_list = []
             for idx, (item, parsed) in enumerate(valid_pairs[:30], start=1):
                 article_list.append(
-                    f"{idx}. Title: {parsed.get('title','')}\n"
-                    f"URL: {item.get('url','')}\n"
-                    f"Source: {parsed.get('source','')}\n"
-                    f"Summary: {parsed.get('summary','')}\n"
-                    f"Why it matters: {parsed.get('why_it_matters','')}\n"
+                    f"{idx}. Title: {parsed.get('title', '')}\n"
+                    f"URL: {item.url or ''}\n"
+                    f"Source: {parsed.get('source', '')}\n"
+                    f"Summary: {parsed.get('summary', '')}\n"
+                    f"Why it matters: {parsed.get('why_it_matters', '')}\n"
                 )
 
             user_content = (
                 f"Current date: {formatted_date}\n\n"
                 "Use the following articles to produce a single professional newsletter.\n"
                 "Please follow the exact SECTION STRUCTURE and FORMAT RULES in the system instructions.\n\n"
-                "Articles:\n\n"
-                + "\n".join(article_list)
+                "Articles:\n\n" + "\n".join(article_list)
             )
 
             payload = {
@@ -173,16 +167,16 @@ def build_newsletter(items: List[NewsItem], summaries: List[str]) -> str:
         except Exception:
             # On any failure, fall back to programmatic formatter below
             pass
-    
+
     # Categorize by source
     industry_news = []
     research_papers = []
     opensource_tools = []
     community_signals = []
-    
+
     for item, parsed in valid_pairs[:20]:
-        source = item.get("source", "").lower()
-        
+        source = (item.source or "").lower()
+
         if source == "arxiv":
             research_papers.append(parsed)
         elif source == "github trending":
@@ -191,10 +185,10 @@ def build_newsletter(items: List[NewsItem], summaries: List[str]) -> str:
             community_signals.append(parsed)
         else:
             industry_news.append(parsed)
-    
+
     # Build professional newsletter
     body = header
-    
+
     sep = "━" * 50 + "\n"
 
     # Section 1: TOP INDUSTRY DEVELOPMENTS
@@ -207,7 +201,7 @@ def build_newsletter(items: List[NewsItem], summaries: List[str]) -> str:
             body += _format_article(counter, article, emoji="🔥")
             counter += 1
         body += "\n"
-    
+
     # Section 2: RESEARCH HIGHLIGHTS
     if research_papers:
         body += "RESEARCH HIGHLIGHTS\n"
@@ -217,7 +211,7 @@ def build_newsletter(items: List[NewsItem], summaries: List[str]) -> str:
             body += _format_article(counter, article, emoji="📚")
             counter += 1
         body += "\n"
-    
+
     # Section 3: OPEN-SOURCE & TOOLS
     if opensource_tools:
         body += "OPEN-SOURCE & TOOLS\n"
@@ -227,7 +221,7 @@ def build_newsletter(items: List[NewsItem], summaries: List[str]) -> str:
             body += _format_article(counter, article, emoji="⭐")
             counter += 1
         body += "\n"
-    
+
     # Section 4: COMMUNITY SIGNALS
     if community_signals:
         body += "COMMUNITY SIGNALS\n"
@@ -237,7 +231,7 @@ def build_newsletter(items: List[NewsItem], summaries: List[str]) -> str:
             body += _format_article(counter, article, emoji="💬")
             counter += 1
         body += "\n"
-    
+
     # Executive Insight
     body += "EXECUTIVE INSIGHT\n"
     body += "━" * 80 + "\n\n"
@@ -251,7 +245,7 @@ def build_newsletter(items: List[NewsItem], summaries: List[str]) -> str:
         "The next major advantage will come from building reliable,\n"
         "production-grade AI systems at scale.\n\n\n"
     )
-    
+
     # Remove any footer-like lines accidentally present in the assembled body
     body = _strip_footer(body)
 
