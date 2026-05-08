@@ -16,6 +16,7 @@ feedparser>=6.0.11
 python-telegram-bot>=21.0.0
 apscheduler>=3.10.4
 sentence-transformers>=2.2.0
+praw>=7.6.0
 
 # Testing
 pytest>=8.3.0
