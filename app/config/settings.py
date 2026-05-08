@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     
     # Feature flags
     use_embeddings: bool = True
-    use_postgres_checkpoint: bool = True
+    use_postgres_checkpoint: bool = False
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

@@ -20,6 +20,8 @@ logger = get_logger(__name__)
 async def run_newsletter() -> None:
     """Run the daily AI news workflow."""
     settings = get_settings()
+    from app.config.validation import validate_settings
+    validate_settings(settings)
     configure_langsmith(settings)
     app = build_graph()
     initial_state = {

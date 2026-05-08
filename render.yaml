@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: ai-news-agent
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py --mode workflow
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11
+      - key: LOG_LEVEL
+        value: INFO
+      - key: USE_POSTGRES_CHECKPOINT
+        value: "false"
+      - key: NEWSLETTER_HOUR
+        value: "9"
+      - key: NEWSLETTER_MINUTE
+        value: "0"
+    # Secrets (set these in Render dashboard under Environment)
+    # - GROQ_API_KEY
+    # - TELEGRAM_BOT_TOKEN
+    # - TELEGRAM_CHAT_ID
+    # - LANGCHAIN_API_KEY (optional)

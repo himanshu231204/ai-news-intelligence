@@ -14,6 +14,9 @@ GITHUB_TRENDING_URL = "https://github.com/trending"
 AI_TOPICS = ["machine-learning", "deep-learning", "artificial-intelligence", "llm"]
 
 
+from app.utils.retry import async_retry
+
+@async_retry(max_retries=3, backoff_factor=2, initial_delay=2)
 async def fetch_github_trending() -> List[NewsItem]:
     """Fetch trending AI repositories from GitHub."""
     items = []
