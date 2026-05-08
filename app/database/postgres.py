@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import sqlite3
@@ -21,7 +21,7 @@ def save_newsletter_run(state: NewsState) -> None:
     # Defensive: aggressively remove any existing footer lines (linkedin/github/follow/powered by)
     import re
 
-    raw_text = state.get("newsletter", "") or ""
+    raw_text = state.newsletter or ""
     # Remove exact canonical footer occurrences
     canonical_footer = (
         "━" * 80 + "\n\n"
@@ -36,16 +36,20 @@ def save_newsletter_run(state: NewsState) -> None:
     cleaned = raw_text.replace(canonical_footer, "")
 
     # Strip any stray lines that mention linkedin, github, follow, or powered by
-    cleaned = re.sub(r"(?im)^.*(linkedin\.com|github\.com|follow for more|follow me|powered by).*$\n?", "", cleaned)
+    cleaned = re.sub(
+        r"(?im)^.*(linkedin\.com|github\.com|follow for more|follow me|powered by).*$\n?",
+        "",
+        cleaned,
+    )
 
     sanitized = cleaned.strip() + "\n\n" + canonical_footer
 
     payload = {
         "created_at": datetime.now(timezone.utc).isoformat(),
-        "article_count": len(state.get("ranked_news", [])),
+        "article_count": len(state.ranked_news),
         "newsletter_text": sanitized,
-        "errors": json.dumps(state.get("errors", [])),
-        "metadata": json.dumps(state.get("metadata", {})),
+        "errors": json.dumps(state.errors),
+        "metadata": json.dumps(state.metadata),
     }
 
     with sqlite3.connect(db_path) as connection:
@@ -70,4 +74,8 @@ def save_newsletter_run(state: NewsState) -> None:
         )
         connection.commit()
 
-    logger.info("Persisted newsletter run to %s with %s ranked items", db_path, payload["article_count"])
+    logger.info(
+        "Persisted newsletter run to %s with %s ranked items",
+        db_path,
+        payload["article_count"],
+    )
