@@ -25,6 +25,10 @@ services:
         value: "0"
       - key: USE_POSTGRES_CHECKPOINT
         value: "false"
+      - key: ENABLE_GOOGLE_DRIVE
+        value: "true"
+      - key: GOOGLE_DRIVE_FOLDER_ID
+        value: "1Tiez1n0EGUULZecnDP92dyKeiblSCP4q"
 
   # Alternative: Web Service (if background worker not available)
   # Uncomment below and comment out background worker above
@@ -57,9 +61,4 @@ services:
 #   - TELEGRAM_CHAT_ID
 # Optional:
 #   - LANGCHAIN_API_KEY
-
-# Google Drive Integration (Optional - for LinkedIn newsletter storage)
-# To enable, add these secrets:
-#   - GOOGLE_SERVICE_ACCOUNT_JSON={"type":"service_account",...}
-#   - GOOGLE_DRIVE_FOLDER_ID=your_folder_id
-#   - ENABLE_GOOGLE_DRIVE=true
+#   - GOOGLE_SERVICE_ACCOUNT_JSON (Required for LinkedIn newsletter storage)
