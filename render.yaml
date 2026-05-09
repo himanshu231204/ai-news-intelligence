@@ -6,7 +6,7 @@ services:
   # Uses less compute hours and runs continuously
   - name: news-agent-scheduler
     type: background
-    env: python
+    runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: python main.py --mode scheduler --scheduled
