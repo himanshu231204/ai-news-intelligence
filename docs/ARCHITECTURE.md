@@ -317,7 +317,115 @@ flowchart TD
 
 ---
 
-## 8. Component Summary
+## 8. Telegram Delivery Workflow
+
+```mermaid
+flowchart TD
+    START([Newsletter Ready]) --> VALIDATE{Validate Message}
+    
+    VALIDATE -->|Empty| SKIP[Skip Send]
+    VALIDATE -->|Valid| FORMAT[Format Markdown]
+    
+    FORMAT --> COLLAPSE[Collapse Duplicate Footers]
+    
+    COLLAPSE --> SPLIT{Split if >3800 chars?}
+    
+    SPLIT -->|Yes| CHUNK[Split into Chunks]
+    SPLIT -->|No| SINGLE[Single Message]
+    
+    CHUNK --> SEND_LOOP[Send Chunk 1..N]
+    SINGLE --> SEND_LOOP
+    
+    SEND_LOOP --> SEND_CHUNK[Send via Telegram API]
+    
+    SEND_CHUNK --> SUCCESS{Success?}
+    SUCCESS -->|Yes| LOG[Log Delivery]
+    SUCCESS -->|No| RETRY[Retry 3x with Backoff]
+    
+    RETRY --> RETRY_SUCCESS{Retry Success?}
+    RETRY_SUCCESS -->|Yes| LOG
+    RETRY_SUCCESS -->|No| ERROR[Log Error & Continue]
+    
+    LOG --> END([END])
+    
+    subgraph Commands["Command Handlers"]
+        C1[/start]
+        C2[/help]
+        C3[/sources]
+        C4[/developerinfo]
+        C5[/daily]
+        C6[/trending]
+        C7[/opensource]
+        C8[/research]
+    end
+    
+    START -.-> Commands
+```
+
+### 8.1 Message Processing Pipeline
+
+| Step | Description | Implementation |
+|------|-------------|----------------|
+| **Validation** | Skip empty messages | `if not message.strip()` |
+| **Footer Deduplication** | Collapse repeated footer blocks | `_collapse_footer()` function |
+| **Markdown Formatting** | Parse mode: Markdown | `parse_mode: "Markdown"` |
+| **Message Splitting** | Split at 3800 chars | `textwrap.wrap()` |
+| **Chunk Sending** | Send each chunk sequentially | `requests.post()` with retry |
+| **Error Handling** | 3 retries with 2s backoff | `@sync_retry` decorator |
+
+### 8.2 Command Handlers
+
+| Command | Description | Response |
+|---------|-------------|----------|
+| `/start` | Welcome message | Bot introduction & commands |
+| `/help` | Help menu | All available commands |
+| `/sources` | List news sources | Configured RSS, GitHub, HN sources |
+| `/developerinfo` | Developer info | LinkedIn, GitHub, tech stack |
+| `/daily` | Full newsletter | Runs workflow, sends complete newsletter |
+| `/trending` | Top 5 trending | Filters by score, sends top 5 |
+| `/opensource` | Open source projects | Filters by keywords (github, repo, oss) |
+| `/research` | Research papers | Filters by keywords (arxiv, paper, research) |
+
+### 8.3 Workflow Execution
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Bot
+    participant Workflow
+    participant LLM
+    participant Telegram_API
+    
+    User->>Bot: /daily command
+    Bot->>Bot: Send "Collecting AI news..."
+    Bot->>Workflow: Run LangGraph workflow
+    Workflow->>LLM: Process & summarize news
+    LLM-->>Workflow: Return newsletter
+    Workflow-->>Bot: Newsletter result
+    Bot->>Bot: Delete progress message
+    Bot->>Telegram_API: Send newsletter chunks
+    Telegram_API-->>Bot: Success
+    Bot-->>User: Newsletter message(s)
+```
+
+### 8.4 Error Handling
+
+- **Empty message**: Skip sending, log warning
+- **Missing config**: Skip sending, log warning
+- **API failure**: Retry 3 times with exponential backoff (2s → 4s → 8s)
+- **Chunk failure**: Continue with remaining chunks, log errors
+- **Workflow failure**: Return error message to user
+
+### 8.5 Configuration Requirements
+
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `TELEGRAM_BOT_TOKEN` | Bot API token from @BotFather | Yes |
+| `TELEGRAM_CHAT_ID` | Target chat ID for newsletters | Yes |
+
+---
+
+## 9. Component Summary
 
 | Component | Technology | Purpose |
 |-----------|------------|---------|
@@ -334,7 +442,7 @@ flowchart TD
 
 ---
 
-## 9. Environment Variables
+## 10. Environment Variables
 
 ```mermaid
 flowchart LR
@@ -360,7 +468,7 @@ flowchart LR
 
 ---
 
-## 10. State Schema
+## 11. State Schema
 
 ```mermaid
 classDiagram
