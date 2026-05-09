@@ -335,14 +335,17 @@ def _build_fallback_newsletter(valid_pairs: List, formatted_date: str) -> str:
             lines.append(f"• {title}")
         lines.append("")
 
-    # Footer
-    lines.append("━━━━━━━━━━")
+    # Footer - use consistent separator
+    lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     lines.append("")
     lines.append("🔗 CONNECT WITH ME")
     lines.append("• [LinkedIn](https://linkedin.com/in/himanshu231204)")
     lines.append("• [GitHub](https://github.com/himanshu231204)")
+    lines.append(
+        "• [Subscribe on LinkedIn](https://www.linkedin.com/build-relation/newsletter-follow?entityUrn=7458964188225249280)"
+    )
     lines.append("")
-    lines.append("━━━━━━━━━")
+    lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     lines.append("💡 Stay ahead of AI! See you tomorrow! 🚀")
 
     return "\n".join(lines)

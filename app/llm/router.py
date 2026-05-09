@@ -48,45 +48,49 @@ Generate a professional newsletter in this structure:
 
 🚨 BREAKING NEWS
 [Only if there's a major announcement - model releases, funding >$100M, major partnerships]
-• [Title] - [1-line summary]
+• [Title](URL) - [1-line summary]
 
 🤖 MODEL RELEASES
 [New AI models, updates, benchmarks]
-• [Model Name] by [Company] - [What it does]
-• [Model Name] by [Company] - [What it does]
+• [Model Name](URL) by [Company] - [What it does]
+• [Model Name](URL) by [Company] - [What it does]
 
 💻 AI AGENTS & CODING
 [Agent frameworks, coding tools, developer tools]
-• [Tool/Project] - [What it does]
-• [Tool/Project] - [What it does]
+• [Tool/Project](URL) - [What it does]
+• [Tool/Project](URL) - [What it does]
 
 📄 RESEARCH PAPERS
 [arXiv papers, research breakthroughs]
-• [Paper Name] - [Key insight]
-• [Paper Name] - [Key insight]
+• [Paper Name](URL) - [Key insight]
+• [Paper Name](URL) - [Key insight]
 
 🛠 OPEN SOURCE
 [New GitHub repos, open-source projects]
-• [Repo/Project] - [What it does]
-• [Repo/Project] - [What it does]
+• [Repo/Project](URL) - [What it does]
+• [Repo/Project](URL) - [What it does]
 
 💰 FUNDING & M&A
 [Investments, acquisitions, partnerships]
-• [Company] - [Amount/Deal] - [Investors]
-• [Company] - [Amount/Deal] - [Investors]
+• [Company](URL) - [Amount/Deal] - [Investors]
+• [Company](URL) - [Amount/Deal] - [Investors]
 
 🎯 PRODUCTS & DEMOS
 [Product launches, demos, tools]
-• [Product] - [What it is]
-• [Product] - [What it is]
+• [Product](URL) - [What it is]
+• [Product](URL) - [What it is]
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 🔗 CONNECT WITH ME
 • [LinkedIn](https://linkedin.com/in/himanshu231204)
 • [GitHub](https://github.com/himanshu231204)
+• [Subscribe on LinkedIn](https://www.linkedin.com/build-relation/newsletter-follow?entityUrn=7458964188225249280)
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+IMPORTANT: 
+- Use Telegram Markdown format for links - [text](url) not plain text.
+- ALWAYS include the source URL in parentheses after each title.
+- Do not add extra blank lines between sections.
 💡 Stay ahead of AI! See you tomorrow! 🚀
 """
 
@@ -258,6 +262,71 @@ class LLMRouter:
         logger.warning("All LLM providers failed. Using template fallback")
         return _build_fallback_newsletter(valid_pairs, formatted_date)
 
+    def _build_article_list(self, valid_pairs: List[tuple]) -> List[str]:
+        """Build article list for newsletter (token optimized).
+
+        Args:
+            valid_pairs: List of (item, parsed_summary) tuples
+
+        Returns:
+            List of formatted article strings
+        """
+        article_list = []
+        for idx, (item, parsed) in enumerate(valid_pairs[:30], start=1):
+            article_list.append(
+                f"{idx}. Title: {parsed.get('title', '')}\n"
+                f"URL: {item.url or ''}\n"
+                f"Source: {parsed.get('source', '')}\n"
+                f"Summary: {parsed.get('summary', '')}\n"
+                f"Why it matters: {parsed.get('why_it_matters', '')}\n"
+            )
+        return article_list
+
+    def _process_newsletter_result(self, result: str) -> str:
+        """Process and format newsletter result with proper footer.
+
+        Args:
+            result: Raw newsletter from LLM
+
+        Returns:
+            Formatted newsletter with proper footer
+        """
+        # Clean up any footer artifacts
+        from app.newsletter.generator import _strip_footer
+
+        result = _strip_footer(result)
+
+        # Clean up extra blank lines
+        import re
+
+        result = re.sub(r"\n\s*\n\s*\n", "\n\n", result)
+
+        # Ensure proper footer with links is present
+        has_linkedin = "linkedin.com/in/himanshu231204" in result
+        has_github = "github.com/himanshu231204" in result
+
+        if not has_linkedin or not has_github:
+            lines = result.split("\n")
+            cutoff = len(lines)
+            for i, line in enumerate(lines):
+                if "CONNECT" in line.upper() or "STAY AHEAD" in line.upper():
+                    cutoff = i
+                    break
+
+            result = "\n".join(lines[:cutoff])
+
+            result += (
+                "\n━━━━━━━\n\n"
+                "🔗 CONNECT WITH ME\n"
+                "• [LinkedIn](https://linkedin.com/in/himanshu231204)\n"
+                "• [GitHub](https://github.com/himanshu231204)\n"
+                "• [Subscribe on LinkedIn](https://www.linkedin.com/build-relation/newsletter-follow?entityUrn=7458964188225249280)\n\n"
+                "━━━━━━━━━━━━\n"
+                "💡 Stay ahead of AI! See you tomorrow! 🚀"
+            )
+
+        return result.rstrip()
+
     async def _generate_with_gemini(
         self,
         valid_pairs: List[tuple],
@@ -272,16 +341,7 @@ class LLMRouter:
         Returns:
             Generated newsletter or None
         """
-        # Build article list (limited to 30 for token optimization)
-        article_list = []
-        for idx, (item, parsed) in enumerate(valid_pairs[:30], start=1):
-            article_list.append(
-                f"{idx}. Title: {parsed.get('title', '')}\n"
-                f"URL: {item.url or ''}\n"
-                f"Source: {parsed.get('source', '')}\n"
-                f"Summary: {parsed.get('summary', '')}\n"
-                f"Why it matters: {parsed.get('why_it_matters', '')}\n"
-            )
+        article_list = self._build_article_list(valid_pairs)
 
         # Get current quarter
         from datetime import datetime
@@ -310,36 +370,7 @@ class LLMRouter:
         )
 
         if result:
-            # Clean up any footer artifacts
-            from app.newsletter.generator import _strip_footer
-
-            result = _strip_footer(result)
-
-            # Ensure proper footer with links is present
-            has_linkedin = "linkedin.com/in/himanshu231204" in result
-            has_github = "github.com/himanshu231204" in result
-
-            if not has_linkedin or not has_github:
-                # Remove any incomplete footer and add proper one
-                lines = result.split("\n")
-                cutoff = len(lines)
-                for i, line in enumerate(lines):
-                    if "CONNECT" in line.upper() or "STAY AHEAD" in line.upper():
-                        cutoff = i
-                        break
-
-                result = "\n".join(lines[:cutoff])
-
-                result += (
-                    "\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                    "🔗 CONNECT WITH ME\n"
-                    "• LinkedIn: https://linkedin.com/in/himanshu231204\n"
-                    "• GitHub: https://github.com/himanshu231204\n\n"
-                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                    "💡 Stay ahead of AI! See you tomorrow! 🚀"
-                )
-
-            return result.rstrip()
+            return self._process_newsletter_result(result)
 
         return None
 
@@ -357,16 +388,7 @@ class LLMRouter:
         Returns:
             Generated newsletter or None
         """
-        # Build article list (limited to 30 for token optimization)
-        article_list = []
-        for idx, (item, parsed) in enumerate(valid_pairs[:30], start=1):
-            article_list.append(
-                f"{idx}. Title: {parsed.get('title', '')}\n"
-                f"URL: {item.url or ''}\n"
-                f"Source: {parsed.get('source', '')}\n"
-                f"Summary: {parsed.get('summary', '')}\n"
-                f"Why it matters: {parsed.get('why_it_matters', '')}\n"
-            )
+        article_list = self._build_article_list(valid_pairs)
 
         # Format system prompt
         system_prompt = NEWSLETTER_SYSTEM.format(
@@ -388,35 +410,7 @@ class LLMRouter:
         )
 
         if result:
-            # Clean up any footer artifacts
-            from app.newsletter.generator import _strip_footer
-
-            result = _strip_footer(result)
-
-            # Ensure proper footer with links is present
-            has_linkedin = "linkedin.com/in/himanshu231204" in result
-            has_github = "github.com/himanshu231204" in result
-
-            if not has_linkedin or not has_github:
-                lines = result.split("\n")
-                cutoff = len(lines)
-                for i, line in enumerate(lines):
-                    if "CONNECT" in line.upper() or "STAY AHEAD" in line.upper():
-                        cutoff = i
-                        break
-
-                result = "\n".join(lines[:cutoff])
-
-                result += (
-                    "\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                    "🔗 CONNECT WITH ME\n"
-                    "• LinkedIn: https://linkedin.com/in/himanshu231204\n"
-                    "• GitHub: https://github.com/himanshu231204\n\n"
-                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                    "💡 Stay ahead of AI! See you tomorrow! 🚀"
-                )
-
-            return result.rstrip()
+            return self._process_newsletter_result(result)
 
         return None
 
