@@ -306,10 +306,10 @@ flowchart TD
     TRACK --> END([END])
     
     subgraph Commands["Command Handlers"]
-        C1[/daily]
-        C2[/trending]
-        C3[/subscribe]
-        C4[/unsubscribe]
+        C1["/daily"]
+        C2["/trending"]
+        C3["/subscribe"]
+        C4["/unsubscribe"]
     end
     
     SEND --> Commands
@@ -349,14 +349,14 @@ flowchart TD
     LOG --> END([END])
     
     subgraph Commands["Command Handlers"]
-        C1[/start]
-        C2[/help]
-        C3[/sources]
-        C4[/developerinfo]
-        C5[/daily]
-        C6[/trending]
-        C7[/opensource]
-        C8[/research]
+        C1["/start"]
+        C2["/help"]
+        C3["/sources"]
+        C4["/developerinfo"]
+        C5["/daily"]
+        C6["/trending"]
+        C7["/opensource"]
+        C8["/research"]
     end
     
     START -.-> Commands
