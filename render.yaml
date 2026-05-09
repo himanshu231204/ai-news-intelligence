@@ -2,12 +2,9 @@
 # Save as render.yaml in project root
 
 services:
-  # Background Worker for scheduled newsletter (Recommended)
-  # Uses less compute hours and runs continuously
-  - name: news-agent-scheduler
-    type: background
+  - name: news-agent
+    type: web
     runtime: python
-    plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: python main.py --mode scheduler --scheduled
     envVars:
@@ -15,10 +12,6 @@ services:
         value: "3.11"
       - key: LOG_LEVEL
         value: INFO
-      - key: MODE
-        value: scheduler
-      - key: LANGCHAIN_TRACING_V2
-        value: "true"
       - key: NEWSLETTER_HOUR
         value: "9"
       - key: NEWSLETTER_MINUTE
@@ -29,36 +22,3 @@ services:
         value: "true"
       - key: GOOGLE_DRIVE_FOLDER_ID
         value: "1Tiez1n0EGUULZecnDP92dyKeiblSCP4q"
-
-  # Alternative: Web Service (if background worker not available)
-  # Uncomment below and comment out background worker above
-  # - name: ai-news-agent
-  #   type: web
-  #   runtime: python
-  #   plan: free
-  #   buildCommand: pip install -r requirements.txt
-  #   startCommand: python main.py --mode scheduler --scheduled
-  #   envVars:
-  #     - key: PYTHON_VERSION
-  #       value: "3.11"
-  #     - key: LOG_LEVEL
-  #       value: INFO
-  #     - key: MODE
-  #       value: scheduler
-  #     - key: LANGCHAIN_TRACING_V2
-  #       value: "true"
-  #     - key: NEWSLETTER_HOUR
-  #       value: "9"
-  #     - key: NEWSLETTER_MINUTE
-  #       value: "0"
-
-# Required Secrets (set in Render Dashboard > Environment > Secrets)
-# Required:
-#   - GROQ_API_KEY
-#   - OPENROUTER_API_KEY
-#   - GEMINI_API_KEY
-#   - TELEGRAM_BOT_TOKEN
-#   - TELEGRAM_CHAT_ID
-# Optional:
-#   - LANGCHAIN_API_KEY
-#   - GOOGLE_SERVICE_ACCOUNT_JSON (Required for LinkedIn newsletter storage)
