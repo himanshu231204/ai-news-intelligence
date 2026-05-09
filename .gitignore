@@ -1,8 +1,74 @@
+# Virtual Environment
 .venv/
+venv/
+env/
+ENV/
+
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+eggs/
+*.egg
+
+# Jupyter Notebook
 .ipynb_checkpoints/
+*.ipynb
+
+# Environment Variables
 .env
+.env.local
+.env.*.local
+
+# Database
 newsletter.db
+*.db
+*.sqlite
+
+# ChromaDB Vector Store
 chroma_data/
+chroma/
+vector_db/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Documentation
+docs/_build/
+site/
+
+# Dev Utils
 dev_utils/
+temp/
+tmp/
+
+# Logs
+*.log
+logs/
+
+# LangGraph Checkpoints
+checkpoints/
+.langchain/
+
+# Developer-Only Files (Internal Use)
+CI_TESTING_SUMMARY.md
+QUICKREF_CI_TESTING.md
+TESTING.md
+PRODUCTION_SETUP.md
+DEPLOYMENT_CHECKLIST.md
