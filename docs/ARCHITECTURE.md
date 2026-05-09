@@ -1,6 +1,7 @@
 # AI Intelligence Newsletter Agent - System Architecture
 
 > Production-grade architecture documentation for the AI News Research Agent system.
+> Updated with optimizations for API rate limits and token efficiency.
 
 ---
 
@@ -13,16 +14,16 @@ flowchart TB
         RSS[RSS Feeds]
         HN[Hacker News]
         GH[GitHub Trending]
-        RD[Reddit]
-        X[Twitter/X.com]
+        ArXiv[ArXiv Papers]
+        DEV[DEV.to]
     end
 
     subgraph Core_System["AI News Agent Core"]
         direction LR
         API[FastAPI Server]
         LG[LangGraph Orchestrator]
-        DB[(PostgreSQL)]
-        VS[(Vector Store)]
+        DB[(SQLite)]
+        VS[(ChromaDB)]
         LS[LangSmith]
     end
 
@@ -31,24 +32,25 @@ flowchart TB
         RC[RSS Collector]
         HNC[HackerNews Collector]
         GHC[GitHub Collector]
-        RDC[Reddit Collector]
-        XC[Twitter Collector]
+        AC[ArXiv Collector]
+        DC[DEV.to Collector]
     end
 
     subgraph Processing["Processing Pipeline"]
         direction TB
         MN[Merge Node]
-        FN[Filter Node]
+        KF[keyword_filter]
         DN[Deduplication Node]
+        FN[Filter Node]
         RN[Rank Node]
-        SN[Summarize Node]
+        SN[summarize_news]
         NLG[Newsletter Generator]
     end
 
     subgraph LLM_Providers["LLM Routing Layer"]
         direction TB
         GROQ[Groq Llama]
-        OR[OpenRouter DeepSeek]
+        OR[OpenRouter 5 Models]
         GM[Gemini Flash]
     end
 
@@ -70,194 +72,138 @@ flowchart TB
 
 ---
 
-## 2. Detailed Workflow Diagram
+## 2. Optimized Workflow Diagram
 
 ```mermaid
 flowchart TD
-    START([START]) --> COLLECT[Collect News]
+    START([START]) --> COLLECT[collect_news]
     
     subgraph Collectors_Pipeline["Parallel Collectors"]
         direction TB
         C1[RSS Collector]
         C2[HackerNews Collector]
         C3[GitHub Collector]
-        C4[Reddit Collector]
-        C5[Twitter Collector]
+        C4[ArXiv Collector]
+        C5[DEV.to Collector]
     end
     
     COLLECT --> Collectors_Pipeline
     
-    subgraph Merge_Process["Merge Results"]
-        direction LR
-        M1[Normalize Data]
-        M2[Validate Metadata]
-        M3[Add Timestamps]
-    end
+    MERGE[merge_results] --> KF[keyword_filter]
+    Collectors_Pipeline --> MERGE
     
-    Collectors_Pipeline --> Merge_Process
+    KF --> DN[deduplicate_news]
     
-    subgraph Filter_Process["Filter Low Quality"]
-        direction LR
-        F1[Remove Spam]
-        F2[Filter Non-AI]
-        F3[Validate Content]
-    end
+    DN --> FN[filter_low_quality]
     
-    Merge_Process --> Filter_Process
+    FN --> RN[rank_news]
     
-    subgraph Dedupe_Process["Deduplication"]
-        direction LR
-        D1[Generate Embeddings]
-        D2[Semantic Similarity]
-        D3[Remove Duplicates]
-    end
+    RN --> SN[summarize_news]
     
-    Filter_Process --> Dedupe_Process
+    SN --> NLG[generate_newsletter]
     
-    subgraph Rank_Process["Rank News"]
-        direction LR
-        R1[Calculate Virality]
-        R2[Score Technical Impact]
-        R3[Detect Trends]
-        R4[Apply Weights]
-    end
+    NLG --> LNL[generate_linkedin]
     
-    Dedupe_Process --> Rank_Process
-    
-    subgraph Summarize_Process["Summarize News"]
-        direction LR
-        S1[Extract Key Info]
-        S2[Generate Summary]
-        S3[Add Context]
-    end
-    
-    Rank_Process --> Summarize_Process
-    
-    subgraph Generate_Newsletter["Newsletter Generation"]
-        direction LR
-        N1[Organize Sections]
-        N2[Format Content]
-        N3[Add Metadata]
-    end
-    
-    Summarize_Process --> Generate_Newsletter
-    
-    subgraph Storage["Store Results"]
-        direction LR
-        ST1[Save to PostgreSQL]
-        ST2[Update Vector Store]
-        ST3[Log to LangSmith]
-    end
-    
-    Generate_Newsletter --> Storage
-    
-    subgraph Delivery["Telegram Delivery"]
-        direction LR
-        DL1[Format Message]
-        DL2[Send to Users]
-        DL3[Handle Commands]
-    end
-    
-    Storage --> Delivery
-    Delivery --> END([END])
-```
-
----
-
-## 3. LangGraph Workflow Diagram
-
-```mermaid
-flowchart TB
-    START([START]) --> COLLECT[collect_news]
-    
-    subgraph Parallel_Collectors["Parallel Collectors"]
-        direction TB
-        PC1[RSS Node]
-        PC2[HackerNews Node]
-        PC3[GitHub Node]
-    end
-    
-    COLLECT --> Parallel_Collectors
-    
-    MERGE[merge_results] --> FILTER[filter_low_quality]
-    Parallel_Collectors --> MERGE
-    
-    FILTER --> DEDUP[deduplicate_news]
-    
-    DEDUP --> RANK[rank_news]
-    
-    RANK --> SUMMARIZE[summarize_news]
-    
-    SUMMARIZE --> GENERATE[generate_newsletter]
-    
-    GENERATE --> STORE[store_results]
+    LNL --> STORE[store_results]
     
     STORE --> TELEGRAM[send_telegram]
     
     TELEGRAM --> END([END])
     
-    %% Conditional Edges
-    MERGE -->|No results| END
-    FILTER -->|All filtered| END
-    TELEGRAM -->|Failed| RETRY[Retry 3x]
-    RETRY --> TELEGRAM
+    %% AgentRouter Path
+    COLLECT -->|AgentRouter Available| AGENT[agent_workflow]
+    AGENT -->|Success| LNL
+    AGENT -->|Failed| MERGE
 ```
 
 ---
 
-## 4. LLM Provider Routing Diagram
+## 3. Key Optimizations
+
+### 3.1 Local Keyword Filtering
+- **Before LLM calls** - Filters 46% of non-AI articles
+- Uses high-signal keywords: OpenAI, Anthropic, Claude, GPT-5, Gemini, LangGraph, etc.
+- No LLM needed - pure Python filtering
+
+### 3.2 Batch Summarization
+- **10 articles per LLM call** instead of 1-by-1
+- 90% fewer API calls
+- Uses asyncio semaphore (max 2 concurrent)
+
+### 3.3 Token Optimization
+- Only sends: title + short summary (200 chars) + source
+- Does NOT send full article content
+
+### 3.4 Provider Fallback Chain
+```mermaid
+flowchart TD
+    START[LLM Request] --> GROQ[Groq llama-3.3-70b-versatile]
+    GROQ -->|429 Rate Limit| OR1[OpenRouter Model 1]
+    OR1 -->|429/404| OR2[OpenRouter Model 2]
+    OR2 -->|429/404| OR3[OpenRouter Model 3]
+    OR3 -->|429/404| OR4[OpenRouter Model 4]
+    OR4 -->|429/404| OR5[OpenRouter Model 5]
+    OR5 -->|Failed| FALLBACK[Deterministic Template]
+    
+    GROQ -->|Success| RETURN[Return Result]
+    OR1 -->|Success| RETURN
+    OR2 -->|Success| RETURN
+    OR3 -->|Success| RETURN
+    OR4 -->|Success| RETURN
+    OR5 -->|Success| RETURN
+```
+
+### 3.5 Caching
+- SQLite-based summary cache (7-day TTL)
+- Reduces redundant API calls
+
+### 3.6 Rate Limiting
+- Exponential backoff: 2s → 4s → 8s (capped)
+- Max 3 retries per provider
+
+---
+
+## 4. LLM Provider Routing
 
 ```mermaid
 flowchart TD
-    START([LLM Request]) --> CHECK_GROQ{ Groq Available?}
+    START([LLM Request]) --> CHECK_CACHE{Cache Hit?}
+    CHECK_CACHE -->|Yes| RETURN_CACHE[Return Cached]
+    CHECK_CACHE -->|No| GROQ[Groq Primary]
     
-    CHECK_GROQ -->|Yes| GROQ_PROCESS[Process with Groq Llama]
-    CHECK_GROQ -->|No| CHECK_OR{ OpenRouter Available?}
-    
-    GROQ_PROCESS --> GROQ_SUCCESS{Success?}
-    GROQ_SUCCESS -->|Yes| RETURN_RESULT[Return Result]
+    GROQ --> GROQ_SUCCESS{Success?}
+    GROQ_SUCCESS -->|Yes| CACHE_SET[Cache Result]
     GROQ_SUCCESS -->|No| RATE_LIMIT{Rate Limited?}
     
-    RATE_LIMIT -->|Yes| CHECK_OR
-    RATE_LIMIT -->|No| RETRY_GROQ[Retry Groq 2x]
-    RETRY_GROQ --> GROQ_SUCCESS
+    RATE_LIMIT -->|Yes| BACKOFF[Exponential Backoff]
+    BACKOFF --> GROQ_RETRY[Retry Groq]
+    GROQ_RETRY --> GROQ_SUCCESS
     
-    CHECK_OR -->|Yes| OR_PROCESS[Process with OpenRouter DeepSeek]
-    CHECK_OR -->|No| CHECK_GM{ Gemini Available?}
+    RATE_LIMIT -->|No| OR[OpenRouter Fallback]
     
-    OR_PROCESS --> OR_SUCCESS{Success?}
-    OR_SUCCESS -->|Yes| RETURN_RESULT
-    OR_SUCCESS -->|No| CHECK_GM
+    OR --> OR_SUCCESS{Success?}
+    OR_SUCCESS -->|Yes| CACHE_SET
+    OR_SUCCESS -->|No| TRY_NEXT[Try Next Model]
     
-    CHECK_GM -->|Yes| GM_PROCESS[Process with Gemini Flash]
-    CHECK_GM -->|No| FALLBACK[Return Error / Cache]
+    TRY_NEXT -->|More Models| OR
+    TRY_NEXT -->|All Failed| TEMPLATE[Template Fallback]
     
-    GM_PROCESS --> GM_SUCCESS{Success?}
-    GM_SUCCESS -->|Yes| FORMAT[Format Output]
-    GM_SUCCESS -->|No| FALLBACK
-    
-    FORMAT --> RETURN_RESULT
-    
-    RETURN_RESULT --> END([END])
-    
-    %% Styling
-    style GROQ_PROCESS fill:#90EE90
-    style OR_PROCESS fill:#87CEEB
-    style GM_PROCESS fill:#DDA0DD
-    style FALLBACK fill:#FFB6C1
+    CACHE_SET --> RETURN
+    TEMPLATE --> RETURN
+    RETURN_CACHE --> END([END])
 ```
 
 ---
 
-## 5. Data Flow Diagram
+## 5. Data Flow
 
 ```mermaid
 flowchart LR
     subgraph Sources["Data Sources"]
-        RSS_Feed[RSS Feed XML]
+        RSS_Feed[RSS Feeds]
         HN_API[HackerNews API]
         GH_API[GitHub API]
-        RD_API[Reddit API]
+        ArXiv_API[ArXiv API]
     end
     
     subgraph Collectors["Collectors"]
@@ -266,526 +212,189 @@ flowchart LR
         GHC[GitHub Collector]
     end
     
-    subgraph Normalize["Normalization Layer"]
-        JSON[Convert to JSON]
-        Validate[Validate Schema]
-        Dedupe[Mark Duplicates]
-    end
-    
-    subgraph Storage["Data Storage"]
-        PG[(PostgreSQL)]
-        VS[(Vector Store)]
+    subgraph Processing["Processing Pipeline"]
+        MERGE[Merge Results]
+        KF[keyword_filter]
+        DEDUP[Deduplication]
+        FILTER[Quality Filter]
+        RANK[Rank]
     end
     
     subgraph LLM["LLM Processing"]
-        Summarize[LLM Summarizer]
-        Rank[LLM Ranker]
+        BATCH[Batch Summarizer]
+        ROUTER[LLM Router]
     end
     
     subgraph Output["Output Layer"]
-        Newsletter[Newsletter]
-        Telegram[Telegram Message]
+        TELEGRAM[Telegram Newsletter]
+        LINKEDIN[LinkedIn Newsletter]
+        DRIVE[Google Drive]
     end
     
     RSS_Feed --> RC
     HN_API --> HNC
     GH_API --> GHC
     
-    RC --> Normalize
-    HNC --> Normalize
-    GHC --> Normalize
+    RC --> MERGE
+    HNC --> MERGE
+    GHC --> MERGE
     
-    Normalize --> PG
-    Normalize --> VS
+    MERGE --> KF
+    KF --> DEDUP
+    DEDUP --> FILTER
+    FILTER --> RANK
     
-    PG --> LLM
-    VS --> LLM
+    RANK --> BATCH
+    BATCH --> ROUTER
     
-    LLM --> Output
+    ROUTER --> TELEGRAM
+    ROUTER --> LINKEDIN
+    LINKEDIN --> DRIVE
 ```
 
 ---
 
-## 6. Collector Pipeline Diagram
+## 6. Newsletter Format
 
 ```mermaid
 flowchart TB
-    START([Daily Trigger]) --> SCHEDULER[Scheduler]
+    INPUT[Ranked News] --> CATEGORIZE[Categorize]
     
-    subgraph RSS_Collector["RSS Collector"]
-        direction TB
-        RSS1[Fetch Feed URLs]
-        RSS2[Parse XML/Atom]
-        RSS3[Extract Metadata]
-        RSS4[Filter AI Content]
-    end
+    CATEGORIZE --> SECTIONS[6 Sections]
     
-    subgraph HN_Collector["HackerNews Collector"]
-        direction TB
-        HN1[Call HN API]
-        HN2[Get Top Stories]
-        HN3[Fetch Comments]
-        HN4[Filter AI Tags]
-    end
+    SECTIONS -->|Breaking| B1[Title + URL]
+    SECTIONS -->|Model Releases| B2[Title + URL]
+    SECTIONS -->|AI Agents| B3[Title + URL]
+    SECTIONS -->|Research| B4[Title + URL]
+    SECTIONS -->|Open Source| B5[Title + URL]
+    SECTIONS -->|Products| B6[Title + URL]
     
-    subgraph GitHub_Collector["GitHub Collector"]
-        direction TB
-        GH1[Call GitHub API]
-        GH2[Get Trending Repos]
-        GH3[Filter by Language]
-        GH4[Extract Metadata]
-    end
+    B1 --> FOOTER[Add Footer]
+    B2 --> FOOTER
+    B3 --> FOOTER
+    B4 --> FOOTER
+    B5 --> FOOTER
+    B6 --> FOOTER
     
-    subgraph Merge_Node["Merge Node"]
-        direction TB
-        M1[Collect All Results]
-        M2[Normalize Fields]
-        M3[Add Source Tags]
-        M4[Sort by Date]
-    end
+    FOOTER --> OUTPUT[Telegram + LinkedIn]
     
-    SCHEDULER --> RSS_Collector
-    SCHEDULER --> HN_Collector
-    SCHEDULER --> GitHub_Collector
-    
-    RSS_Collector --> Merge_Node
-    HN_Collector --> Merge_Node
-    GitHub_Collector --> Merge_Node
-    
-    Merge_Node --> OUTPUT[Combined News List]
-    
-    %% Error Handling
-    RSS_Collector -->|Error| LOG_RSS[Log Error]
-    HN_Collector -->|Error| LOG_HN[Log Error]
-    GitHub_Collector -->|Error| LOG_GH[Log Error]
-    
-    LOG_RSS --> CONTINUE1[Continue]
-    LOG_HN --> CONTINUE2[Continue]
-    LOG_GH --> CONTINUE3[Continue]
-    
-    CONTINUE1 --> Merge_Node
-    CONTINUE2 --> Merge_Node
-    CONTINUE3 --> Merge_Node
+    FOOTER -->|Links| PROFILE[LinkedIn Profile]
+    FOOTER -->|Links| GITHUB[GitHub]
+    FOOTER -->|Links| SUBSCRIBE[LinkedIn Newsletter]
 ```
 
 ---
 
-## 7. Newsletter Generation Pipeline
-
-```mermaid
-flowchart TB
-    INPUT[Ranked News Items] --> CATEGORIZE[Categorize News]
-    
-    subgraph Categories["News Categories"]
-        direction TB
-        CAT1[Major AI Updates]
-        CAT2[Open Source Launches]
-        CAT3[Research Highlights]
-        CAT4[Trending Discussions]
-        CAT5[Tools Worth Watching]
-    end
-    
-    CATEGORIZE --> Categories
-    
-    subgraph Per_Category["Per-Category Processing"]
-        direction LR
-        PC1[Select Top Items]
-        PC2[Generate Summaries]
-        PC3[Add Context]
-        PC4[Format Output]
-    end
-    
-    Categories --> Per_Category
-    
-    subgraph Assembly["Newsletter Assembly"]
-        direction TB
-        A1[Add Header]
-        A2[Combine Sections]
-        A3[Add Footer]
-        A4[Apply Formatting]
-    end
-    
-    Per_Category --> Assembly
-    
-    subgraph Final_Format["Final Formatting"]
-        direction LR
-        FF1[LLM Polish]
-        FF2[Add Emojis]
-        FF3[Validate Length]
-        FF4[Generate Preview]
-    end
-    
-    Assembly --> Final_Format
-    
-    Final_Format --> OUTPUT[Final Newsletter]
-    
-    %% Quality Gates
-    FF1 -->|Poor Quality| REGENERATE[Regenerate]
-    REGENERATE --> FF1
-```
-
----
-
-## 8. Telegram Delivery Workflow
+## 7. Telegram Delivery
 
 ```mermaid
 flowchart TD
-    START([Newsletter Ready]) --> FORMAT[Format for Telegram]
+    START([Newsletter Ready]) --> FORMAT[Format Markdown]
     
-    subgraph Format["Message Formatting"]
-        direction TB
-        F1[Split Long Messages]
-        F2[Add Markdown]
-        F3[Add Preview]
-        F4[Add Navigation]
-    end
+    FORMAT --> SPLIT[Split if >3800 chars]
     
-    FORMAT --> Format
+    SPLIT --> SEND[Send via Telegram API]
     
-    subgraph Send["Send Process"]
-        direction TB
-        S1[Get Subscriber List]
-        S2[Batch Messages]
-        S3[Send to Each User]
-        S4[Track Delivery]
-    end
+    SEND --> SUCCESS{Success?}
+    SUCCESS -->|Yes| TRACK[Track Delivery]
+    SUCCESS -->|No| RETRY[Retry 3x]
     
-    Format --> Send
+    RETRY --> RETRY_SUCCESS{Retry Success?}
+    RETRY_SUCCESS -->|Yes| TRACK
+    RETRY_SUCCESS -->|No| LOG[Log Error]
+    
+    TRACK --> END([END])
     
     subgraph Commands["Command Handlers"]
-        direction TB
-        C1[/daily - Send Daily]
-        C2[/trending - Send Trending]
-        C3[/opensource - OS Projects]
-        C4[/research - Research Papers]
-        C5[/subscribe - Subscribe]
-        C6[/unsubscribe - Unsubscribe]
+        C1[/daily]
+        C2[/trending]
+        C3[/subscribe]
+        C4[/unsubscribe]
     end
     
-    Send --> Commands
-    
-    subgraph User_Interaction["User Interactions"]
-        direction TB
-        U1[User Sends Command]
-        U2[Parse Command]
-        U3[Execute Handler]
-        U4[Send Response]
-    end
-    
-    Commands --> User_Interaction
-    
-    User_Interaction --> END([END])
-    
-    %% Error Handling
-    Send -->|Failed| RETRY[Retry 3x]
-    RETRY -->|Success| Track_Delivery[Track Delivery]
-    RETRY -->|Failed| LOG_ERROR[Log Error]
-    LOG_ERROR --> ALERT[Alert Admin]
+    SEND --> Commands
 ```
 
 ---
 
-## 9. Error Handling + Fallback Workflow
-
-```mermaid
-flowchart TB
-    START([Any Node Execution]) --> EXECUTE[Execute Node]
-    
-    EXECUTE --> SUCCESS{Success?}
-    
-    %% Success Path
-    SUCCESS -->|Yes| NEXT[Continue to Next Node]
-    
-    %% Error Path
-    SUCCESS -->|No| CHECK_ERROR{Error Type?}
-    
-    subgraph Retry_Logic["Retry Logic"]
-        direction TB
-        R1[Retry Attempt 1]
-        R2[Retry Attempt 2]
-        R3[Retry Attempt 3]
-    end
-    
-    CHECK_ERROR -->|Timeout| Retry_Logic
-    CHECK_ERROR -->|Rate Limit| FALLBACK_LLM[Fallback LLM]
-    CHECK_ERROR -->|Network| Retry_Logic
-    CHECK_ERROR -->|Invalid Data| SKIP[Skip Item]
-    
-    Retry_Logic --> RETRY_SUCCESS{Retry Success?}
-    RETRY_SUCCESS -->|Yes| NEXT
-    RETRY_SUCCESS -->|No| FALLBACK_LLM
-    
-    FALLBACK_LLM --> FALLBACK_SUCCESS{Fallback Success?}
-    FALLBACK_SUCCESS -->|Yes| NEXT
-    FALLBACK_SUCCESS -->|No| LOG_ERROR[Log Error]
-    
-    SKIP --> LOG_SKIP[Log Skipped Item]
-    LOG_SKIP --> NEXT
-    
-    subgraph Circuit_Breaker["Circuit Breaker"]
-        direction TB
-        CB1[Track Failures]
-        CB2[Threshold: 5 failures]
-        CB3[Open Circuit]
-        CB4[After 60s, Try Again]
-    end
-    
-    LOG_ERROR --> Circuit_Breaker
-    Circuit_Breaker --> NEXT
-    
-    NEXT --> END_NODE([Continue Workflow])
-    
-    %% Global Error Handler
-    LOG_ERROR --> GLOBAL_LOG[Global Error Log]
-    GLOBAL_LOG --> ALERT_ADMIN[Alert Admin]
-    ALERT_ADMIN --> NOTIFY[Send Notification]
-```
-
----
-
-## 10. Deployment Architecture
-
-```mermaid
-flowchart TB
-    subgraph Cloud_Provider["Cloud Infrastructure"]
-        direction TB
-        LB[Load Balancer]
-        
-        subgraph Docker_Container["Docker Container"]
-            direction LR
-            FastAPI[FastAPI App]
-            LangGraph[LangGraph Runtime]
-            Workers[Background Workers]
-            Scheduler[Scheduler]
-        end
-        
-        DB[(PostgreSQL)]
-        VectorDB[(ChromaDB/FAISS)]
-        Cache[(Redis Cache)]
-    end
-    
-    subgraph External_Services["External Services"]
-        direction LR
-        Telegram[Telegram API]
-        LLM_Services[LLM Providers]
-        LangSmith[LangSmith]
-    end
-    
-    subgraph Monitoring["Monitoring & Logging"]
-        direction LR
-        Logs[Log Aggregation]
-        Metrics[Metrics Collector]
-        Alerts[Alert Manager]
-    end
-    
-    LB --> Docker_Container
-    Docker_Container --> DB
-    Docker_Container --> VectorDB
-    Docker_Container --> Cache
-    Docker_Container --> External_Services
-    Docker_Container --> Monitoring
-    
-    subgraph Environment["Environment Variables"]
-        direction TB
-        ENV1[OPENAI_API_KEY]
-        ENV2[GROQ_API_KEY]
-        ENV3[TELEGRAM_BOT_TOKEN]
-        ENV4[POSTGRES_URL]
-        ENV5[LANGCHAIN_API_KEY]
-    end
-    
-    ENV1 --> Docker_Container
-    ENV2 --> Docker_Container
-    ENV3 --> Docker_Container
-    ENV4 --> Docker_Container
-    ENV5 --> Docker_Container
-```
-
----
-
-## 11. State Graph Schema
-
-```mermaid
-classDiagram
-    class NewsState {
-        +List[Dict] raw_news
-        +List[Dict] unique_news
-        +List[Dict] ranked_news
-        +List[str] summaries
-        +str newsletter
-        +List[str] errors
-    }
-    
-    class CollectorResult {
-        +str title
-        +str url
-        +str source
-        +datetime timestamp
-        +str content
-    }
-    
-    class RankedItem {
-        +Dict news
-        +float score
-        +str category
-        +int rank
-    }
-    
-    class Newsletter {
-        +str date
-        +str header
-        +List[Section] sections
-        +str footer
-    }
-    
-    NewsState --> CollectorResult
-    NewsState --> RankedItem
-    NewsState --> Newsletter
-```
-
----
-
-## 12. Component Interaction Diagram
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant TelegramBot
-    participant FastAPI
-    participant LangGraph
-    participant Collectors
-    participant LLM
-    participant Database
-    participant VectorStore
-    
-    User->>TelegramBot: /daily command
-    TelegramBot->>FastAPI: Forward command
-    FastAPI->>LangGraph: Trigger workflow
-    
-    par Parallel Collection
-        LangGraph->>Collectors: Collect from RSS
-        LangGraph->>Collectors: Collect from HN
-        LangGraph->>Collectors: Collect from GitHub
-    end
-    
-    Collectors-->>LangGraph: Raw news data
-    
-    LangGraph->>VectorStore: Deduplicate
-    VectorStore-->>LangGraph: Unique items
-    
-    LangGraph->>LLM: Rank news
-    LLM-->>LangGraph: Ranked items
-    
-    LangGraph->>LLM: Summarize items
-    LLM-->>LangGraph: Summaries
-    
-    LangGraph->>LLM: Generate newsletter
-    LLM-->>LangGraph: Formatted newsletter
-    
-    LangGraph->>Database: Store results
-    Database-->>LangGraph: Confirm storage
-    
-    LangGraph->>TelegramBot: Send newsletter
-    TelegramBot->>User: Deliver message
-    
-    Note over LangGraph,LangSmith: All steps traced in LangSmith
-```
-
----
-
-## 13. Async Execution Flow
-
-```mermaid
-flowchart TB
-    TRIGGER[Scheduled Trigger / Manual] --> QUEUE[Task Queue]
-    
-    subgraph Worker_Pool["Worker Pool"]
-        direction LR
-        W1[Worker 1]
-        W2[Worker 2]
-        W3[Worker 3]
-    end
-    
-    QUEUE --> Worker_Pool
-    
-    subgraph Tasks["Async Tasks"]
-        direction TB
-        T1[Collect RSS]
-        T2[Collect HN]
-        T3[Collect GitHub]
-        T4[LLM Processing]
-        T5[Telegram Send]
-    end
-    
-    Worker_Pool --> Tasks
-    
-    subgraph Sync["Synchronization"]
-        direction LR
-        S1[Lock Manager]
-        S2[Result Aggregator]
-        S3[State Manager]
-    end
-    
-    Tasks --> Sync
-    
-    Sync --> COMPLETE[Task Complete]
-    
-    %% Parallel execution indicator
-    T1 -.->|async| T2
-    T2 -.->|async| T3
-    T3 -.->|async| T4
-```
-
----
-
-## 14. System Component Summary
+## 8. Component Summary
 
 | Component | Technology | Purpose |
 |-----------|------------|---------|
 | Orchestration | LangGraph | Workflow management |
 | API Server | FastAPI | REST endpoints |
-| Database | PostgreSQL | Persistent storage |
-| Vector Store | ChromaDB/FAISS | Semantic search |
+| Database | SQLite | Persistent storage |
+| Vector Store | ChromaDB | Semantic search/dedup |
 | Observability | LangSmith | Tracing & monitoring |
 | Messaging | Telegram Bot | User delivery |
 | LLM Primary | Groq Llama | Fast processing |
-| LLM Fallback | OpenRouter DeepSeek | Rate limit handling |
+| LLM Fallback | OpenRouter (5 models) | Rate limit handling |
 | LLM Formatting | Gemini Flash | Final polish |
+| Caching | SQLite | Summary cache (7-day TTL) |
 
 ---
 
-## 15. Environment Configuration
+## 9. Environment Variables
 
 ```mermaid
 flowchart LR
     subgraph Config["Configuration"]
         direction TB
         ENV[.env file]
-        Pydantic[pydantic Settings]
-        Secrets[Secrets Manager]
+        Settings[pydantic Settings]
     end
     
-    subgraph Validation["Validation"]
-        direction LR
-        V1[Type Check]
-        V2[Required Fields]
-        V3[Default Values]
+    ENV --> Settings
+    
+    subgraph Variables["Required Variables"]
+        direction TB
+        V1[GROQ_API_KEY]
+        V2[OPENROUTER_API_KEY]
+        V3[TELEGRAM_BOT_TOKEN]
+        V4[TELEGRAM_CHAT_ID]
+        V5[GOOGLE_SERVICE_ACCOUNT]
     end
     
-    subgraph Injection["Dependency Injection"]
-        direction LR
-        I1[FastAPI Depends]
-        I2[LangGraph Context]
-        I3[Service Classes]
-    end
-    
-    ENV --> Pydantic
-    Pydantic --> Validation
-    Validation --> Injection
+    Settings --> Variables
 ```
 
 ---
 
-*Document Version: 1.0*
-*Generated for: AI Intelligence Newsletter Agent*
-*Architecture: Production-Ready Multi-Agent System*
+## 10. State Schema
+
+```mermaid
+classDiagram
+    class NewsState {
+        +List[NewsItem] raw_news
+        +List[NewsItem] merged_news
+        +List[NewsItem] unique_news
+        +List[NewsItem] filtered_news
+        +List[NewsItem] ranked_news
+        +List[str] summaries
+        +str newsletter
+        +str linkedin_newsletter
+        +str google_doc_link
+        +List[str] errors
+        +Dict metadata
+    }
+    
+    class NewsItem {
+        +str source
+        +str title
+        +str url
+        +datetime published_at
+        +float score
+        +str summary
+        +str company
+        +str category
+        +float importance_score
+    }
+    
+    NewsState --> NewsItem
+```
+
+---
+
+*Document Version: 2.0*
+*Updated: May 2026*
+*Key Changes: Added keyword filtering, batch summarization, provider fallbacks, caching*

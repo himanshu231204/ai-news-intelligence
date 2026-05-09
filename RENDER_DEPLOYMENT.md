@@ -8,23 +8,23 @@ This guide walks you through deploying the AI News Agent to [Render.com](https:/
 - **No credit card required** for free tier (just signup)
 - **Auto-deploys** from GitHub
 - **Easy environment variables** management
-- **No persistent database needed** (we use in-memory checkpoints)
+- **Optimized for API efficiency** - our optimizations reduce API calls by 90%
 
 ## Prerequisites
 
 - GitHub account
 - Render account (free signup)
-- API keys: Groq, Telegram (get free at https://console.groq.com and @BotFather on Telegram)
+- API keys: Groq, OpenRouter, Gemini, Telegram
 
 ---
 
 ## Step 1: Push to GitHub
 
 ```bash
+git add .
+git commit -m "Setup for Render deployment"
 git push origin main
 ```
-
-Your repo: `https://github.com/himanshu231204/ai-news-intelligence`
 
 ---
 
@@ -36,18 +36,21 @@ Your repo: `https://github.com/himanshu231204/ai-news-intelligence`
 
 ---
 
-## Step 3: Create a New Web Service
+## Step 3: Create a Background Worker (Recommended)
 
-1. Dashboard → **New** → **Web Service**
-2. Connect repository → Select `ai-news-intelligence`
+We use a **Background Worker** instead of Web Service because:
+- Better for scheduled tasks
+- Runs continuously without spinning down
+- More suitable for long-running newsletter generation
+
+1. Dashboard → **New** → **Background Worker**
+2. Connect repository → Select your repo
 3. Fill in:
-   - **Name**: `ai-news-agent`
+   - **Name**: `news-agent-scheduler`
    - **Runtime**: Python
    - **Build Command**: `pip install -r requirements.txt`
-   - **Start Command**: `python main.py --mode workflow`
-4. Click **Create Web Service**
-
-The app will start building (takes ~2 min)
+   - **Start Command**: `python main.py --mode scheduler --scheduled`
+4. Click **Create Worker**
 
 ---
 
@@ -55,31 +58,58 @@ The app will start building (takes ~2 min)
 
 In Render dashboard:
 
-1. Go to your service → **Environment**
-2. Add these as **Secret** (not Public):
+1. Go to your worker → **Environment**
+2. Add these as **Secret**:
 
+### Required Variables
 ```
 GROQ_API_KEY=your_groq_api_key_here
+OPENROUTER_API_KEY=your_openrouter_api_key_here
+GEMINI_API_KEY=your_gemini_api_key_here
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
 TELEGRAM_CHAT_ID=your_telegram_chat_id_here
 ```
 
-Optional (for LangSmith tracing):
+### Optional Variables
 ```
 LANGCHAIN_API_KEY=your_langchain_api_key_here
+LANGCHAIN_TRACING_V2=true
+GOOGLE_SERVICE_ACCOUNT_JSON={"your_json_here"}
 ```
 
-3. Click **Save changes**
+3. Click **Save Changes**
 
-The service will redeploy automatically.
+The worker will redeploy automatically.
 
 ---
 
-## Step 5: Trigger Daily Newsletter
+## Step 5: Configure Scheduler
 
-Since Render free web services sleep after 15 minutes of inactivity, we use **cron jobs** to wake them up and run the newsletter.
+The worker runs 24/7 but we need to set when to send the newsletter.
 
-### Option A: Use Render Cron Jobs (Recommended)
+In your worker environment, add:
+```
+NEWSLETTER_HOUR=9
+NEWSLETTER_MINUTE=0
+```
+
+This runs at 9:00 AM UTC daily.
+
+---
+
+## Step 6: Verify It Works
+
+1. Check logs:
+   - Dashboard → Worker → **Logs**
+   - Look for: `Workflow completed successfully`
+
+2. You should receive a newsletter in Telegram!
+
+---
+
+## Alternative: Use Cron Job (If Worker Not Available)
+
+If you prefer using Render's cron job feature:
 
 1. Dashboard → **New** → **Cron Job**
 2. Fill in:
@@ -87,38 +117,24 @@ Since Render free web services sleep after 15 minutes of inactivity, we use **cr
    - **Runtime**: Python 3.11
    - **Schedule**: `0 9 * * *` (daily at 9 AM UTC)
    - **Build Command**: `pip install -r requirements.txt`
-   - **Run Command**: `python main.py --mode workflow`
+   - **Run Command**: `python main.py --mode workflow --scheduled`
 3. Connect the same repository
 4. Set same environment variables
 5. Click **Create Cron Job**
 
-The cron job will run once daily, wake up the service, collect news, and send via Telegram.
-
-### Option B: External Cron Service (Free)
-
-Use a free external cron service like https://www.cron-job.org:
-
-```
-Service URL: https://your-render-service-url/
-Schedule: Daily at 9 AM UTC
-```
-
-(Not recommended—Render cron jobs are simpler)
-
 ---
 
-## Step 6: Verify It Works
+## Optimizations for Free Tier
 
-1. Trigger manually:
-   ```bash
-   curl -X POST https://your-service.onrender.com/
-   ```
+Our system is optimized to work within free tier limits:
 
-2. Check logs:
-   - Dashboard → Service → **Logs**
-   - Look for: `Newsletter sent to Telegram`
-
-3. You should receive a message in Telegram!
+| Optimization | Benefit |
+|-------------|---------|
+| **Keyword Filtering** | Filters 46% of articles BEFORE LLM calls |
+| **Batch Summarization** | 90% fewer API calls (10 articles per call) |
+| **Token Optimization** | Sends only title + short summary |
+| **Caching** | 7-day SQLite cache reduces redundant calls |
+| **Rate Limiting** | Exponential backoff prevents 429 errors |
 
 ---
 
@@ -126,22 +142,10 @@ Schedule: Daily at 9 AM UTC
 
 | Feature | Free | Notes |
 |---------|------|-------|
-| Web service runtime | 750 hrs/month | Enough for daily runs |
-| Cron job runtime | 750 hrs/month | Recommended for scheduling |
-| Database | None | We use in-memory (no persistence) |
-| Build time | ~2 min | First deploy only |
-| Restart time | ~30 sec | Each cold start |
-
-**Note**: Free web services spin down after 15 min of inactivity. Cron jobs are the best way to keep them running regularly.
-
----
-
-## Upgrade Path (If Needed)
-
-If you want persistent databases or higher uptime, upgrade to **Starter** ($7/month):
-- Includes managed PostgreSQL
-- Always-on web services
-- Can enable `USE_POSTGRES_CHECKPOINT=true` for state persistence
+| Worker runtime | 750 hrs/month | Enough for daily newsletters |
+| Cron job runtime | 750 hrs/month | Alternative option |
+| Build time | ~3 min | First deploy only |
+| Memory | 512 MB | Sufficient for our workload |
 
 ---
 
@@ -157,20 +161,20 @@ If you want persistent databases or higher uptime, upgrade to **Starter** ($7/mo
 - Check Telegram chat ID (@userinfobot)
 - View logs for errors
 
-### "Service spinning down too fast"
-- This is normal on free tier
-- Use Cron Jobs to schedule runs instead of keeping service alive
+### "Rate limit errors"
+- This is expected on free tier
+- Our optimizations handle this automatically with exponential backoff
 
 ### "Out of compute hours"
-- Free tier gets 750 hours/month = ~25 hours/day average
-- If you exceed, upgrade to Starter or wait for monthly reset
+- Free tier gets 750 hours/month
+- If you exceed, upgrade to paid plan or wait for monthly reset
 
 ---
 
 ## Monitoring
 
 1. **Render Logs**:
-   - Dashboard → Service → Logs
+   - Dashboard → Worker → Logs
    - Check for errors
 
 2. **LangSmith** (optional):
@@ -179,13 +183,14 @@ If you want persistent databases or higher uptime, upgrade to **Starter** ($7/mo
 
 3. **Telegram**:
    - Check your chat for newsletters
-   - /start command shows available commands
 
 ---
 
 ## Cost Breakdown (Free Tier)
 
 - **Groq API**: Free (rate limited)
+- **OpenRouter API**: Free (fallback)
+- **Gemini API**: Free (formatting)
 - **Telegram Bot**: Free
 - **Render hosting**: Free (750 hrs/month)
 - **Embeddings**: Free (local HuggingFace)
@@ -198,8 +203,8 @@ If you want persistent databases or higher uptime, upgrade to **Starter** ($7/mo
 - [ ] Push repo to GitHub
 - [ ] Create Render account
 - [ ] Connect repository
+- [ ] Create Background Worker
 - [ ] Set environment variables
-- [ ] Create Cron Job
 - [ ] Test first run
 - [ ] Verify Telegram messages
 
@@ -210,7 +215,6 @@ If you want persistent databases or higher uptime, upgrade to **Starter** ($7/mo
 - **Render Docs**: https://render.com/docs
 - **Python on Render**: https://render.com/docs/deploy-python
 - **Cron Jobs**: https://render.com/docs/cron-jobs
-- **GitHub Issues**: Submit bugs to this repo
 
 ---
 

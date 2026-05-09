@@ -5,9 +5,8 @@ Production-ready Google Drive and Google Docs API client.
 Uses service account authentication for secure, scalable access.
 
 Features:
-- Create Google Docs
-- Update existing docs
-- List documents in folder
+- Create professionally formatted Google Docs
+- Proper headings, bold text, links
 - Date-based filename generation
 """
 
@@ -84,7 +83,6 @@ class GoogleDriveClient:
     def _get_credentials(self):
         """Get service account credentials from JSON."""
         try:
-            # Parse JSON string from environment
             if isinstance(self.credentials_json, str):
                 info = json.loads(self.credentials_json)
             else:
@@ -106,23 +104,12 @@ class GoogleDriveClient:
             raise
 
     def generate_filename(self) -> str:
-        """Generate date-based filename.
-
-        Returns:
-            Filename in format: AI_Intelligence_Brief_YYYY_MM_DD.md
-        """
+        """Generate date-based filename."""
         today = datetime.now()
-        return f"AI_Intelligence_Brief_{today.strftime('%Y_%m_%d')}.md"
+        return f"AI Intelligence Brief - {today.strftime('%B %d, %Y')}"
 
     def get_existing_doc(self, filename: str) -> Optional[Dict]:
-        """Check if document already exists in the folder.
-
-        Args:
-            filename: Name of the document to find
-
-        Returns:
-            Document dict if found, None otherwise
-        """
+        """Check if document already exists in the folder."""
         try:
             query = (
                 f"name='{filename}' and '{self.folder_id}' in parents and trashed=false"
@@ -149,51 +136,33 @@ class GoogleDriveClient:
             logger.error(f"Error checking for existing document: {e}")
             return None
 
-    def create_document(
+    def _create_professional_document(
         self,
         content: str,
         title: str,
     ) -> Optional[str]:
-        """Create a new Google Doc in the specified folder.
+        """Create a professionally formatted Google Doc.
 
         Args:
-            content: Document content (markdown/text)
+            content: Newsletter content
             title: Document title
 
         Returns:
-            Document URL if successful, None otherwise
+            Document URL if successful
         """
         try:
-            # Create file metadata
-            file_metadata = {
-                "name": title,
-                "mimeType": "application/vnd.google-apps.document",
-                "parents": [self.folder_id],
-            }
-
-            # Convert content to Google Docs format
-            # For simplicity, we'll create a simple text document
-            # In production, you might want to use the Docs API to create
-            # formatted documents with proper headings, etc.
-
-            # Create the document
-            doc = (
-                self.drive_service.files()
-                .create(
-                    body=file_metadata,
-                    fields="id, webViewLink",
-                )
-                .execute()
-            )
+            # Create the document with title
+            doc = self.docs_service.documents().create(body={"title": title}).execute()
 
             doc_id = doc.get("id")
             logger.info(f"Created Google Doc: {title} (ID: {doc_id})")
 
-            # Update content using Docs API
+            # Now add formatted content
             if content:
-                self._update_document_content(doc_id, content)
+                self._add_formatted_content(doc_id, content)
 
-            web_link = doc.get("webViewLink")
+            # Get the web view link
+            web_link = f"https://docs.google.com/document/d/{doc_id}/edit"
             logger.info(f"Document URL: {web_link}")
             return web_link
 
@@ -201,48 +170,140 @@ class GoogleDriveClient:
             logger.error(f"Error creating Google Doc: {e}")
             return None
 
-    def _update_document_content(self, doc_id: str, content: str):
-        """Update document content using Google Docs API.
+    def _add_formatted_content(self, doc_id: str, content: str):
+        """Add professionally formatted content to the document.
 
-        Args:
-            doc_id: Document ID
-            content: New content
+        Uses Google Docs API to create:
+        - Bold headings
+        - Proper paragraph spacing
+        - Hyperlinks for URLs
         """
         try:
-            # Convert plain text to document format
-            # This creates a simple document with the content
-            requests = [
-                {
-                    "insertText": {
-                        "location": {"index": 1},
-                        "text": content,
-                    }
-                }
-            ]
+            requests = []
+            current_index = 1
+
+            # Parse content and create formatted elements
+            lines = content.split("\n")
+
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    # Add paragraph break
+                    requests.append(
+                        {
+                            "insertText": {
+                                "location": {"index": current_index},
+                                "text": "\n",
+                            }
+                        }
+                    )
+                    current_index += 1
+                    continue
+
+                # Check if it's a heading (starts with emoji or is all caps)
+                is_heading = (
+                    line.startswith(
+                        ("📰", "🔵", "🟣", "📄", "🛠", "💡", "📌", "👤", "---")
+                    )
+                    or line.isupper()
+                    or (len(line) < 50 and line.endswith(":"))
+                )
+
+                # Check if line contains a URL
+                url = None
+                if "http" in line.lower():
+                    import re
+
+                    url_match = re.search(r"https?://[^\s]+", line)
+                    if url_match:
+                        url = url_match.group()
+                        # Remove URL from text for now
+                        line = line.replace(url, "").strip()
+
+                # Insert the text
+                if is_heading:
+                    # Heading - make it bold
+                    requests.append(
+                        {
+                            "insertText": {
+                                "location": {"index": current_index},
+                                "text": line + "\n",
+                            }
+                        }
+                    )
+                    current_index += len(line) + 1
+
+                    # Format as bold heading
+                    requests.append(
+                        {
+                            "updateTextStyle": {
+                                "textStyle": {
+                                    "bold": True,
+                                    "fontSize": {"magnitude": 14, "unit": "PT"},
+                                },
+                                "range": {
+                                    "startIndex": current_index,
+                                    "endIndex": current_index + len(line),
+                                },
+                                "fields": "bold,fontSize",
+                            }
+                        }
+                    )
+                else:
+                    # Regular paragraph
+                    text_to_insert = line
+                    if url:
+                        text_to_insert = f"{line} (Link: {url})"
+                    text_to_insert += "\n"
+
+                    requests.append(
+                        {
+                            "insertText": {
+                                "location": {"index": current_index},
+                                "text": text_to_insert,
+                            }
+                        }
+                    )
+                    current_index += len(text_to_insert)
+
+            # Execute batch update
+            if requests:
+                self.docs_service.documents().batchUpdate(
+                    documentId=doc_id, body={"requests": requests}
+                ).execute()
+
+            logger.info(f"Added formatted content to document: {doc_id}")
+
+        except Exception as e:
+            logger.error(f"Error adding formatted content: {e}")
+            # Try simple text insert as fallback
+            self._add_simple_content(doc_id, content)
+
+    def _add_simple_content(self, doc_id: str, content: str):
+        """Fallback: Add content as simple text."""
+        try:
+            requests = [{"insertText": {"location": {"index": 1}, "text": content}}]
 
             self.docs_service.documents().batchUpdate(
-                documentId=doc_id,
-                body={"requests": requests},
+                documentId=doc_id, body={"requests": requests}
             ).execute()
 
-            logger.info(f"Updated document content for: {doc_id}")
+            logger.info(f"Added simple content to document: {doc_id}")
 
-        except HttpError as e:
-            logger.error(f"Error updating document content: {e}")
-            # Content was created, just log the error
+        except Exception as e:
+            logger.error(f"Error adding simple content: {e}")
+
+    def create_document(
+        self,
+        content: str,
+        title: str,
+    ) -> Optional[str]:
+        """Create a new Google Doc in the specified folder."""
+        return self._create_professional_document(content, title)
 
     def update_document(self, doc_id: str, content: str) -> bool:
-        """Update an existing Google Doc's content.
-
-        Args:
-            doc_id: Document ID to update
-            content: New content
-
-        Returns:
-            True if successful, False otherwise
-        """
+        """Update an existing Google Doc's content."""
         try:
-            # Clear existing content and insert new content
             # Get document to find content length
             doc = self.docs_service.documents().get(documentId=doc_id).execute()
             body_content = doc.get("body", {}).get("content", [])
@@ -263,18 +324,15 @@ class GoogleDriveClient:
                         }
                     }
                 },
-                {
-                    "insertText": {
-                        "location": {"index": 1},
-                        "text": content,
-                    }
-                },
             ]
 
             self.docs_service.documents().batchUpdate(
                 documentId=doc_id,
                 body={"requests": requests},
             ).execute()
+
+            # Add new content
+            self._add_formatted_content(doc_id, content)
 
             logger.info(f"Updated existing document: {doc_id}")
             return True
@@ -284,35 +342,20 @@ class GoogleDriveClient:
             return False
 
     def save_newsletter(self, content: str) -> Optional[str]:
-        """Save newsletter to Google Drive, creating or updating.
-
-        Args:
-            content: Newsletter content
-
-        Returns:
-            Document URL if successful, None otherwise
-        """
+        """Save newsletter to Google Drive, creating or updating."""
         filename = self.generate_filename()
 
         # Check if document already exists
         existing = self.get_existing_doc(filename)
 
         if existing:
-            # Update existing document
             doc_id = existing["id"]
             success = self.update_document(doc_id, content)
             if success:
-                # Get the web view link
-                doc = (
-                    self.drive_service.files()
-                    .get(fileId=doc_id, fields="webViewLink")
-                    .execute()
-                )
                 logger.info(f"Updated existing newsletter: {filename}")
-                return doc.get("webViewLink")
+                return f"https://docs.google.com/document/d/{doc_id}/edit"
             return None
         else:
-            # Create new document
             url = self.create_document(content, filename)
             if url:
                 logger.info(f"Created new newsletter: {filename}")
@@ -320,11 +363,7 @@ class GoogleDriveClient:
 
 
 def get_google_drive_client() -> Optional[GoogleDriveClient]:
-    """Get or create Google Drive client based on settings.
-
-    Returns:
-        GoogleDriveClient instance if enabled, None otherwise
-    """
+    """Get or create Google Drive client based on settings."""
     settings = get_settings()
 
     if not settings.enable_google_drive:

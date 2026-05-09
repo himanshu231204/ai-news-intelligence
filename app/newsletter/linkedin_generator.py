@@ -64,7 +64,17 @@ async def build_linkedin_newsletter(
 
     settings = get_settings()
 
-    # Try Gemini first
+    # Try Groq first (most reliable for this use case)
+    if settings.groq_api_key:
+        try:
+            newsletter = await _generate_with_groq(valid_pairs, formatted_date)
+            if newsletter:
+                logger.info("LinkedIn newsletter generated via Groq")
+                return newsletter
+        except Exception as e:
+            logger.warning(f"Groq LinkedIn newsletter generation failed: {e}")
+
+    # Fallback to Gemini
     if settings.gemini_api_key:
         try:
             newsletter = await _generate_with_gemini(valid_pairs, formatted_date)
@@ -93,6 +103,58 @@ async def build_linkedin_newsletter(
     )
 
 
+async def _generate_with_groq(
+    valid_pairs: List[tuple],
+    formatted_date: str,
+) -> Optional[str]:
+    """Generate LinkedIn newsletter using Groq API."""
+    from app.llm import providers
+
+    # Build article list (limited to 20 for token optimization)
+    article_list = []
+    for idx, (item, parsed) in enumerate(valid_pairs[:20], start=1):
+        article_list.append(
+            f"Article {idx}:\n"
+            f"Title: {parsed.get('title', '')}\n"
+            f"Source: {parsed.get('source', '')}\n"
+            f"Summary: {parsed.get('summary', '')}\n"
+            f"Why it matters: {parsed.get('why_it_matters', '')}\n"
+        )
+
+    system_prompt = LINKEDIN_NEWSLETTER_SYSTEM.format(current_date=formatted_date)
+
+    user_content = (
+        f"Date: {formatted_date}\n\n"
+        "Write a detailed, professional AI newsletter for LinkedIn publishing.\n"
+        "Follow the structure in the system prompt exactly.\n"
+        "Write in paragraphs, not bullet points (except Key Takeaways).\n"
+        "Make it sound human-written and editorial quality.\n\n"
+        "Articles to cover:\n\n" + "\n".join(article_list)
+    )
+
+    result = await providers.call_groq(
+        prompt=user_content,
+        system=system_prompt,
+        model="llama-3.3-70b-versatile",
+        temperature=0.3,
+    )
+
+    if result:
+        # Ensure proper footer
+        if "About the Author" not in result and "👤" not in result:
+            result += (
+                "\n\n---\n\n"
+                "👤 About the Author\n\n"
+                "Himanshu is an AI engineer and technical creator building "
+                "with large language models, AI agents, and modern ML infrastructure. "
+                "He shares insights on AI developments, engineering practices, "
+                "and the future of AI technology."
+            )
+        return result.rstrip()
+
+    return None
+
+
 async def _generate_with_gemini(
     valid_pairs: List[tuple],
     formatted_date: str,
@@ -100,9 +162,9 @@ async def _generate_with_gemini(
     """Generate LinkedIn newsletter using Gemini API."""
     from app.llm import providers
 
-    # Build article list (limited to 25 for token optimization)
+    # Build article list (limited to 20 for token optimization)
     article_list = []
-    for idx, (item, parsed) in enumerate(valid_pairs[:25], start=1):
+    for idx, (item, parsed) in enumerate(valid_pairs[:20], start=1):
         article_list.append(
             f"Article {idx}:\n"
             f"Title: {parsed.get('title', '')}\n"
@@ -152,9 +214,9 @@ async def _generate_with_openrouter(
     """Generate LinkedIn newsletter using OpenRouter API."""
     from app.llm import providers
 
-    # Build article list (limited to 25 for token optimization)
+    # Build article list (limited to 20 for token optimization)
     article_list = []
-    for idx, (item, parsed) in enumerate(valid_pairs[:25], start=1):
+    for idx, (item, parsed) in enumerate(valid_pairs[:20], start=1):
         article_list.append(
             f"Article {idx}:\n"
             f"Title: {parsed.get('title', '')}\n"

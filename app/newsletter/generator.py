@@ -114,13 +114,21 @@ async def build_newsletter(items: List[NewsItem], summaries: List[str]) -> str:
     date_str = today.strftime("%B %d, %Y")
     formatted_date = f"{day_name}, {date_str}"
 
-    # Parse and pair summaries with items
+    # Parse and pair summaries with items - include URL from original item
     valid_pairs = []
     for i, summary in enumerate(summaries):
         if summary and i < len(items):
             parsed = _parse_summary(summary)
             if parsed["title"]:
-                valid_pairs.append((items[i], parsed))
+                # Add the original item's URL to the parsed data
+                item = items[i]
+                parsed["url"] = item.url if hasattr(item, "url") else ""
+                parsed["source"] = (
+                    item.url
+                    if hasattr(item, "url") and item.url
+                    else parsed.get("source", "")
+                )
+                valid_pairs.append((item, parsed))
 
     # Try Gemini-based generation first (primary provider for newsletter)
     settings = get_settings()
@@ -269,11 +277,14 @@ def _build_fallback_newsletter(valid_pairs: List, formatted_date: str) -> str:
         lines.append("🤖 MODEL RELEASES")
         lines.append("")
         for article in model_releases[:4]:
-            title = article.get("title", "Untitled")[:70]
-            why = article.get("why_it_matters", "")[:80]
+            title = article.get("title", "Untitled")
+            why = article.get("why_it_matters", "")
+            url = article.get("url", "")
             lines.append(f"• {title}")
             if why:
                 lines.append(f"  → {why}")
+            if url:
+                lines.append(f"  → {url}")
         lines.append("")
 
     # AI AGENTS & CODING
@@ -281,8 +292,11 @@ def _build_fallback_newsletter(valid_pairs: List, formatted_date: str) -> str:
         lines.append("💻 AI AGENTS & CODING")
         lines.append("")
         for article in ai_agents[:4]:
-            title = article.get("title", "Untitled")[:70]
+            title = article.get("title", "Untitled")
+            source = article.get("source", "")
             lines.append(f"• {title}")
+            if source and source.startswith("http"):
+                lines.append(f"  → {source}")
         lines.append("")
 
     # RESEARCH PAPERS
@@ -290,8 +304,11 @@ def _build_fallback_newsletter(valid_pairs: List, formatted_date: str) -> str:
         lines.append("📄 RESEARCH PAPERS")
         lines.append("")
         for article in research_papers[:4]:
-            title = article.get("title", "Untitled")[:65]
+            title = article.get("title", "Untitled")
+            source = article.get("source", "")
             lines.append(f"• {title}")
+            if source and source.startswith("http"):
+                lines.append(f"  → {source}")
         lines.append("")
 
     # OPEN SOURCE
@@ -299,8 +316,11 @@ def _build_fallback_newsletter(valid_pairs: List, formatted_date: str) -> str:
         lines.append("🛠 OPEN SOURCE")
         lines.append("")
         for article in opensource[:4]:
-            title = article.get("title", "Untitled")[:65]
+            title = article.get("title", "Untitled")
+            source = article.get("source", "")
             lines.append(f"• {title}")
+            if source and source.startswith("http"):
+                lines.append(f"  → {source}")
         lines.append("")
 
     # FUNDING
@@ -308,8 +328,11 @@ def _build_fallback_newsletter(valid_pairs: List, formatted_date: str) -> str:
         lines.append("💰 FUNDING & M&A")
         lines.append("")
         for article in funding[:4]:
-            title = article.get("title", "Untitled")[:65]
+            title = article.get("title", "Untitled")
+            source = article.get("source", "")
             lines.append(f"• {title}")
+            if source and source.startswith("http"):
+                lines.append(f"  → {source}")
         lines.append("")
 
     # PRODUCTS & DEMOS
@@ -317,8 +340,11 @@ def _build_fallback_newsletter(valid_pairs: List, formatted_date: str) -> str:
         lines.append("🎯 PRODUCTS & DEMOS")
         lines.append("")
         for article in products[:4]:
-            title = article.get("title", "Untitled")[:65]
+            title = article.get("title", "Untitled")
+            source = article.get("source", "")
             lines.append(f"• {title}")
+            if source and source.startswith("http"):
+                lines.append(f"  → {source}")
         lines.append("")
 
     # Fallback: other news if nothing categorized
@@ -331,8 +357,11 @@ def _build_fallback_newsletter(valid_pairs: List, formatted_date: str) -> str:
         lines.append("📰 TOP NEWS")
         lines.append("")
         for article in other_news[:5]:
-            title = article.get("title", "Untitled")[:65]
+            title = article.get("title", "Untitled")
+            source = article.get("source", "")
             lines.append(f"• {title}")
+            if source and source.startswith("http"):
+                lines.append(f"  → {source}")
         lines.append("")
 
     # Footer - use consistent separator
