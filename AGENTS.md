@@ -1,28 +1,34 @@
 # AI News Research Agent - AGENTS.md
 
+> **Project Status**: Production-ready | Open Source | LangGraph-powered
+
 ## Project Overview
 
-This project is an AI-powered autonomous research and newsletter generation system.
+This is an autonomous AI-powered research and newsletter generation system built with LangGraph. The agent collects AI news from multiple sources, filters high-signal information, ranks developments by importance, generates professional newsletters, and delivers them via Telegram — all orchestrated through a DAG-based workflow.
 
-The system collects AI-related news and updates from multiple sources such as:
-- X.com (Twitter)
-- Reddit
-- Hacker News
-- RSS feeds
-- GitHub Trending
+### Core Capabilities
 
-The workflow filters, ranks, summarizes, and generates a high-quality AI newsletter every 24 hours.
+| Capability | Description |
+|------------|-------------|
+| **Multi-Source Collection** | RSS, GitHub, Hacker News, Reddit, arXiv, Dev.to, Product Hunt, Twitter |
+| **Semantic Deduplication** | ChromaDB + HuggingFace embeddings for duplicate detection |
+| **Smart Ranking** | Weighted scoring by virality, technical importance, community attention |
+| **LLM Summarization** | Groq (primary) → OpenRouter (fallback) → Gemini (formatting) |
+| **Telegram Delivery** | Daily newsletters with command handlers (/daily, /trending, etc.) |
+| **Production-Ready** | Docker, error handling, retry logic, LangSmith tracing |
 
-The final newsletter is delivered through a Telegram bot.
+### Tech Stack
 
-The system is built using:
-- LangGraph
-- LangChain
-- LangSmith
-- FastAPI
-- PostgreSQL
-- ChromaDB/FAISS
-- Telegram Bot API
+- **Orchestration**: LangGraph 0.2+ (StateGraph, parallel nodes, checkpointing)
+- **LLM Providers**: Groq Llama, OpenRouter DeepSeek, Gemini Flash
+- **Embeddings**: HuggingFace Sentence Transformers (free, local)
+- **Vector Store**: ChromaDB (semantic search, deduplication)
+- **Database**: PostgreSQL (persistent storage)
+- **API Server**: FastAPI
+- **Messaging**: Telegram Bot API
+- **Scheduler**: APScheduler (24-hour cycles)
+- **Observability**: LangSmith (tracing, debugging)
+- **Deployment**: Docker, Render (free tier), Railway
 
 ---
 

@@ -9,6 +9,9 @@ import httpx
 
 from app.config.settings import get_settings
 from app.newsletter.prompts import NEWSLETTER_GENERATION_PROMPT
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 def _parse_summary(summary: str) -> dict:
@@ -92,8 +95,18 @@ def _format_article_detailed(counter: int, parsed: dict, emoji: str = "") -> str
     return "\n".join(lines)
 
 
-def build_newsletter(items: List[NewsItem], summaries: List[str]) -> str:
-    """Build a professionally formatted newsletter matching enterprise standards."""
+async def build_newsletter(items: List[NewsItem], summaries: List[str]) -> str:
+    """Build a professionally formatted newsletter matching enterprise standards.
+
+    Uses Gemini for LLM-based generation with template fallback.
+
+    Args:
+        items: List of ranked news items
+        summaries: List of summaries from LLM
+
+    Returns:
+        Formatted newsletter string
+    """
 
     # Format date: Saturday, May 09, 2026
     today = datetime.now()
@@ -109,216 +122,227 @@ def build_newsletter(items: List[NewsItem], summaries: List[str]) -> str:
             if parsed["title"]:
                 valid_pairs.append((items[i], parsed))
 
-    # Try LLM-based generation first (OpenRouter or Groq)
+    # Try Gemini-based generation first (primary provider for newsletter)
     settings = get_settings()
-    openrouter_key = getattr(settings, "openrouter_api_key", None)
-    groq_key = getattr(settings, "groq_api_key", None)
 
-    if openrouter_key or groq_key:
+    if settings.gemini_api_key:
         try:
-            # Build article list for LLM
-            article_list = []
-            for idx, (item, parsed) in enumerate(valid_pairs[:30], start=1):
-                article_list.append(
-                    f"{idx}. Title: {parsed.get('title', '')}\n"
-                    f"URL: {item.url or ''}\n"
-                    f"Source: {parsed.get('source', '')}\n"
-                    f"Summary: {parsed.get('summary', '')}\n"
-                    f"Why it matters: {parsed.get('why_it_matters', '')}\n"
-                )
+            # Use the LLM router for Gemini generation
+            from app.llm.router import get_router
 
-            user_content = (
-                f"Current date: {formatted_date}\n\n"
-                "Use the following articles to produce a single professional newsletter.\n"
-                "Please follow the exact FORMAT in the system instructions.\n\n"
-                "Articles:\n\n" + "\n".join(article_list)
+            router = get_router()
+
+            newsletter = await router.generate_newsletter(
+                items, summaries, formatted_date
             )
 
-            # Try OpenRouter first, then Groq
-            api_key = None
-            api_url = None
-            model = None
+            if newsletter:
+                logger.info("Newsletter generated via Gemini")
+                return newsletter
 
-            if openrouter_key:
-                api_key = openrouter_key
-                api_url = "https://openrouter.ai/api/v1/chat/completions"
-                model = getattr(
-                    settings, "openrouter_model", "anthropic/claude-3.5-sonnet"
-                )
-            elif groq_key:
-                api_key = groq_key
-                api_url = "https://api.groq.com/openai/v1/chat/completions"
-                model = settings.groq_model
-
-            if api_key:
-                payload = {
-                    "model": model,
-                    "temperature": 0.2,
-                    "messages": [
-                        {
-                            "role": "system",
-                            "content": NEWSLETTER_GENERATION_PROMPT.format(
-                                current_date=formatted_date
-                            ),
-                        },
-                        {"role": "user", "content": user_content},
-                    ],
-                }
-
-                headers = {
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                }
-
-                if "openrouter" in api_url:
-                    headers["HTTP-Referer"] = (
-                        "https://github.com/himanshu231204/ai-news-agent"
-                    )
-                    headers["X-Title"] = "AI News Agent"
-
-                with httpx.Client(timeout=60) as client:
-                    resp = client.post(api_url, headers=headers, json=payload)
-                    resp.raise_for_status()
-                    data = resp.json()
-                    generated = data["choices"][0]["message"]["content"].strip()
-
-                # Ensure proper footer
-                generated = _strip_footer(generated)
-                final = generated.rstrip()
-                if not final.endswith("CONNECT & BUILD"):
-                    final += (
-                        "\n\n"
-                        + "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n🔗 CONNECT & BUILD\n\nLinkedIn: linkedin.com/in/himanshu231204\nGitHub: github.com/himanshu231204\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                    )
-                return final
-
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Gemini newsletter generation failed: {e}")
 
     # Fallback: Programmatic template matching the premium design
+    logger.info("Using template fallback for newsletter")
     return _build_fallback_newsletter(valid_pairs, formatted_date)
 
 
 def _build_fallback_newsletter(valid_pairs: List, formatted_date: str) -> str:
-    """Build newsletter using the premium template format."""
+    """Build newsletter using the enhanced template format."""
 
-    # Categorize items
-    industry_news = []
+    # Categorize items by detected company/category
+    breaking_news = []
+    model_releases = []
+    ai_agents = []
     research_papers = []
-    opensource_tools = []
-    community_signals = []
+    opensource = []
+    funding = []
+    products = []
+    other_news = []
 
-    for item, parsed in valid_pairs[:20]:
+    # Company keywords for categorization
+    company_keywords = {
+        "openai": "OpenAI",
+        "anthropic": "Anthropic",
+        "google": "Google",
+        "deepmind": "DeepMind",
+        "meta": "Meta",
+        "microsoft": "Microsoft",
+        "nvidia": "NVIDIA",
+        "x.ai": "xAI",
+        "mistral": "Mistral",
+        "hugging face": "HuggingFace",
+        "stability": "Stability AI",
+        "cohere": "Cohere",
+        "amazon": "Amazon",
+    }
+
+    for item, parsed in valid_pairs[:25]:
+        title = (parsed.get("title", "") or "").lower()
+        summary = (parsed.get("summary", "") or "").lower()
         source = (item.source or "").lower()
+        company = (item.company or "").lower()
 
-        if source == "arxiv":
+        # Check for funding keywords
+        if any(
+            kw in title or kw in summary
+            for kw in [
+                "funding",
+                "raises",
+                "series",
+                "acquired",
+                "investment",
+                "million",
+                "billion",
+            ]
+        ):
+            funding.append(parsed)
+            continue
+
+        # Check for model release keywords
+        if any(
+            kw in title
+            for kw in [
+                "model",
+                "gpt",
+                "claude",
+                "gemini",
+                "llama",
+                "release",
+                "launch",
+                "announce",
+            ]
+        ):
+            model_releases.append(parsed)
+            continue
+
+        # Check for research (arxiv)
+        if source == "arxiv" or "arxiv" in source:
             research_papers.append(parsed)
-        elif source == "github trending":
-            opensource_tools.append(parsed)
-        elif source in ["hacker news", "reddit"]:
-            community_signals.append(parsed)
-        else:
-            industry_news.append(parsed)
+            continue
 
-    # Build the premium template
+        # Check for open source / GitHub
+        if source == "github" or "github" in source or "huggingface" in source:
+            opensource.append(parsed)
+            continue
+
+        # Check for agent/coding keywords
+        if any(
+            kw in title
+            for kw in ["agent", "coding", "dev", "tool", "framework", "sdk", "api"]
+        ):
+            ai_agents.append(parsed)
+            continue
+
+        # Check for product/demo keywords
+        if any(
+            kw in title
+            for kw in ["demo", "product", "launch", "release", "beta", "preview"]
+        ):
+            products.append(parsed)
+            continue
+
+        # Default to other news
+        other_news.append(parsed)
+
+    # Build the enhanced template
     lines = []
 
     # Header
-    lines.append(
-        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    )
-    lines.append('💎 The Premium "Intelligence" Template')
-    lines.append("🧠 AI INTELLIGENCE DAILY BRIEF")
-    lines.append(formatted_date)
-    lines.append("")
-    lines.append("The essential update for AI Engineers and Tech Leaders.")
-    lines.append("")
-    lines.append(
-        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    )
+    lines.append(f"🧠 AI DAILY BRIEF — {formatted_date}")
+    lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     lines.append("")
 
-    # TOP DEVELOPMENTS
-    if industry_news:
-        lines.append("🔴 TOP DEVELOPMENTS")
+    # BREAKING NEWS (if any major announcements)
+    if breaking_news:
+        lines.append("🚨 BREAKING NEWS")
         lines.append("")
-        counter = 1
-        for article in industry_news[:6]:
+        for article in breaking_news[:2]:
             title = article.get("title", "Untitled")
-            summary = article.get("summary", "")
-            source = article.get("source", "unknown")
-            why = article.get("why_it_matters", "")
-
-            lines.append(f"{counter}. {title}")
-            lines.append(summary[:200] if summary else "No summary available.")
-            if why:
-                lines.append(f"The Shift: {why}")
-            lines.append(f"Source: {source}")
-            lines.append("")
-            counter += 1
-
-        lines.append(
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        )
+            summary = article.get("summary", "")[:100]
+            lines.append(f"• {title} - {summary}")
         lines.append("")
 
-    # RESEARCH HIGHLIGHTS
+    # MODEL RELEASES
+    if model_releases:
+        lines.append("🤖 MODEL RELEASES")
+        lines.append("")
+        for article in model_releases[:4]:
+            title = article.get("title", "Untitled")[:70]
+            why = article.get("why_it_matters", "")[:80]
+            lines.append(f"• {title}")
+            if why:
+                lines.append(f"  → {why}")
+        lines.append("")
+
+    # AI AGENTS & CODING
+    if ai_agents:
+        lines.append("💻 AI AGENTS & CODING")
+        lines.append("")
+        for article in ai_agents[:4]:
+            title = article.get("title", "Untitled")[:70]
+            lines.append(f"• {title}")
+        lines.append("")
+
+    # RESEARCH PAPERS
     if research_papers:
-        lines.append("🔬 RESEARCH HIGHLIGHTS")
+        lines.append("📄 RESEARCH PAPERS")
         lines.append("")
         for article in research_papers[:4]:
-            title = article.get("title", "Untitled")
-            summary = article.get("summary", "")
-            source = article.get("source", "unknown")
-
-            lines.append(title)
-            lines.append(summary[:200] if summary else "No summary available.")
-            lines.append(f"Source: {source}")
-            lines.append("")
+            title = article.get("title", "Untitled")[:65]
+            lines.append(f"• {title}")
         lines.append("")
 
-    # OPEN-SOURCE & TOOLS
-    if opensource_tools:
-        lines.append("🛠 OPEN-SOURCE & TOOLS")
+    # OPEN SOURCE
+    if opensource:
+        lines.append("🛠 OPEN SOURCE")
         lines.append("")
-        for article in opensource_tools[:4]:
-            title = article.get("title", "Untitled")
-            summary = article.get("summary", "")
-            source = article.get("source", "unknown")
-
-            lines.append(title)
-            lines.append(summary[:200] if summary else "No summary available.")
-            lines.append(f"Source: {source}")
-            lines.append("")
+        for article in opensource[:4]:
+            title = article.get("title", "Untitled")[:65]
+            lines.append(f"• {title}")
         lines.append("")
 
-    # EXECUTIVE SUMMARY
-    lines.append(
-        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    )
+    # FUNDING
+    if funding:
+        lines.append("💰 FUNDING & M&A")
+        lines.append("")
+        for article in funding[:4]:
+            title = article.get("title", "Untitled")[:65]
+            lines.append(f"• {title}")
+        lines.append("")
+
+    # PRODUCTS & DEMOS
+    if products:
+        lines.append("🎯 PRODUCTS & DEMOS")
+        lines.append("")
+        for article in products[:4]:
+            title = article.get("title", "Untitled")[:65]
+            lines.append(f"• {title}")
+        lines.append("")
+
+    # Fallback: other news if nothing categorized
+    if (
+        not any(
+            [model_releases, ai_agents, research_papers, opensource, funding, products]
+        )
+        and other_news
+    ):
+        lines.append("📰 TOP NEWS")
+        lines.append("")
+        for article in other_news[:5]:
+            title = article.get("title", "Untitled")[:65]
+            lines.append(f"• {title}")
+        lines.append("")
+
+    # Footer
+    lines.append("━━━━━━━━━")
     lines.append("")
-    lines.append("📊 EXECUTIVE SUMMARY")
+    lines.append("🔗 CONNECT WITH ME")
+    lines.append("• [LinkedIn](https://linkedin.com/in/himanshu231204)")
+    lines.append("• [GitHub](https://github.com/himanshu231204)")
     lines.append("")
-    lines.append(
-        "The industry is pivoting from Conversational UI → Autonomous Systems."
-    )
-    lines.append("")
-    lines.append("Priority Focus for Q2:")
-    lines.append("• High-fidelity Reasoning")
-    lines.append("• Infrastructure Reliability")
-    lines.append("• Agent Orchestration")
-    lines.append("")
-    lines.append(
-        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    )
-    lines.append("")
-    lines.append("🔗 CONNECT & BUILD")
-    lines.append("")
-    lines.append("LinkedIn: linkedin.com/in/himanshu231204")
-    lines.append("GitHub: github.com/himanshu231204")
-    lines.append("")
-    lines.append(
-        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    )
+    lines.append("━━━━━━━━━━━")
+    lines.append("💡 Stay ahead of AI! See you tomorrow! 🚀")
 
     return "\n".join(lines)

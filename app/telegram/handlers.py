@@ -20,6 +20,9 @@ COMMANDS = ["/daily", "/trending", "/opensource", "/research"]
 def register_bot_handlers(application: Application) -> None:
     """Register all Telegram command handlers on the application."""
     application.add_handler(CommandHandler("start", start_cmd))
+    application.add_handler(CommandHandler("help", help_cmd))
+    application.add_handler(CommandHandler("sources", sources_cmd))
+    application.add_handler(CommandHandler("developerinfo", developerinfo_cmd))
     application.add_handler(CommandHandler("daily", daily_cmd))
     application.add_handler(CommandHandler("trending", trending_cmd))
     application.add_handler(CommandHandler("opensource", opensource_cmd))
@@ -78,7 +81,7 @@ def _build_section(title: str, items: List[NewsItem], summaries: List[str]) -> s
     return "\n\n".join(lines)
 
 
-async def _run_workflow_state() -> NewsState:
+async def _run_workflow_state() -> dict:
     settings = get_settings()
     configure_langsmith(settings)
     app = build_graph()
@@ -102,14 +105,77 @@ async def _run_workflow_state() -> NewsState:
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     _ = context
     text = (
-        "Welcome to AI News Agent.\n"
-        "Commands:\n"
-        "/daily - generate and send latest newsletter\n"
-        "/trending - show trending section\n"
-        "/opensource - show open-source watchlist\n"
-        "/research - show research highlights"
+        "Welcome to AI News Agent.\n\n"
+        "📰 News Generation:\n"
+        "/daily - Today's AI newsletter\n\n"
+        "📂 Content Filters:\n"
+        "/trending - Trending discussions\n"
+        "/opensource - Open source launches\n"
+        "/research - Research highlights\n\n"
+        "ℹ️ Info:\n"
+        "/sources - List news sources\n"
+        "/help - Show all commands"
     )
     await update.effective_message.reply_text(text)
+
+
+async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    _ = context
+    text = (
+        "🤖 *AI News Agent - Commands*\n\n"
+        "📰 *News Generation*\n"
+        "/daily - Today's AI newsletter\n\n"
+        "📂 *Content Filters*\n"
+        "/trending - Trending discussions\n"
+        "/opensource - Open source launches\n"
+        "/research - Research highlights\n\n"
+        "ℹ️ *Info*\n"
+        "/sources - List news sources\n"
+        "/developerinfo - Developer info & links\n"
+        "/help - Show this help message\n\n"
+        "_Use /daily to get your daily AI news brief!_"
+    )
+    await update.effective_message.reply_text(text, parse_mode="Markdown")
+
+
+async def sources_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    _ = context
+    text = (
+        "📡 *Configured News Sources*\n\n"
+        "🔹 *RSS Feeds*\n"
+        "• TechCrunch\n"
+        "• Hacker News\n"
+        "• OpenAI Blog\n"
+        "• Anthropic Blog\n"
+        "• Google AI Blog\n\n"
+        "🔹 *GitHub*\n"
+        "• Trending Repositories (AI/ML)\n\n"
+        "🔹 *Hacker News*\n"
+        "• Top AI-related stories\n\n"
+        "🔹 *Reddit*\n"
+        "• r/MachineLearning\n"
+        "• r/ArtificialIntelligence\n\n"
+        "_Sources are configured in the system. Contact admin to modify._"
+    )
+    await update.effective_message.reply_text(text, parse_mode="Markdown")
+
+
+async def developerinfo_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    _ = context
+    text = (
+        "👨‍💻 *Developer Info*\n\n"
+        "Built with ❤️ by Himanshu\n\n"
+        "🔗 *Connect*\n"
+        "• [LinkedIn](https://linkedin.com/in/himanshu231204)\n"
+        "• [GitHub](https://github.com/himanshu231204)\n\n"
+        "🛠 *Tech Stack*\n"
+        "• LangGraph + LangChain\n"
+        "• Groq + Gemini LLMs\n"
+        "• FastAPI + PostgreSQL\n"
+        "• Telegram Bot API\n\n"
+        "_Thanks for using AI News Agent!_"
+    )
+    await update.effective_message.reply_text(text, parse_mode="Markdown")
 
 
 async def daily_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -126,7 +192,7 @@ async def daily_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
         return
 
-    newsletter = result.newsletter or "No newsletter generated."
+    newsletter = result.get("newsletter", "") or "No newsletter generated."
 
     for part in _split_message(newsletter):
         await update.effective_message.reply_text(part)
@@ -144,8 +210,8 @@ async def trending_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         )
         return
 
-    ranked = result.ranked_news[:5]
-    summaries = result.summaries[:5]
+    ranked = result.get("ranked_news", [])[:5]
+    summaries = result.get("summaries", [])[:5]
     message = _build_section("Trending Discussions", ranked, summaries)
     for part in _split_message(message):
         await update.effective_message.reply_text(part)
@@ -164,9 +230,9 @@ async def opensource_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
 
     keywords = ["open-source", "opensource", "github", "repo", "oss", "release"]
-    ranked = result.ranked_news
+    ranked = result.get("ranked_news", [])
     matched = [item for item in ranked if _keywords_match(item, keywords)][:5]
-    summaries = result.summaries[: len(matched)]
+    summaries = result.get("summaries", [])[: len(matched)]
     message = _build_section("Open Source Launches", matched, summaries)
     for part in _split_message(message):
         await update.effective_message.reply_text(part)
@@ -185,9 +251,9 @@ async def research_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     keywords = ["research", "paper", "arxiv", "benchmark", "study", "preprint"]
-    ranked = result.ranked_news
+    ranked = result.get("ranked_news", [])
     matched = [item for item in ranked if _keywords_match(item, keywords)][:5]
-    summaries = result.summaries[: len(matched)]
+    summaries = result.get("summaries", [])[: len(matched)]
     message = _build_section("Research Highlights", matched, summaries)
     for part in _split_message(message):
         await update.effective_message.reply_text(part)

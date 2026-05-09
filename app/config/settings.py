@@ -10,7 +10,9 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     groq_model: str = "llama-3.3-70b-versatile"
     openrouter_api_key: str = ""
-    openrouter_model: str = "anthropic/claude-3.5-sonnet"
+    openrouter_model: str = "liquid/lfm-2.5-1.2b-thinking:free"
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.5-flash"
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
 
     # LangChain/LangSmith
