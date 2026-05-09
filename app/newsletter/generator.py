@@ -35,11 +35,7 @@ def _parse_summary(summary: str) -> dict:
 
 
 def _strip_footer(text: str) -> str:
-    """Remove common footer lines that may be injected into LLM summaries.
-
-    This strips lines containing linkedin, github, 'follow me', 'powered by',
-    or similar phrases so the final newsletter contains a single footer.
-    """
+    """Remove common footer lines that may be injected into LLM summaries."""
     if not text:
         return text
 
@@ -54,7 +50,6 @@ def _strip_footer(text: str) -> str:
             or low.startswith("follow for")
         ):
             continue
-        # also drop short standalone links that look like footers
         if low.startswith("http") and ("linkedin" in low or "github" in low):
             continue
         lines.append(line)
@@ -62,12 +57,8 @@ def _strip_footer(text: str) -> str:
     return "\n".join(lines).strip()
 
 
-def _format_article(counter: int, parsed: dict, emoji: str = "") -> str:
-    """Format a single article compactly with an emoji prefix.
-
-    Output style (single-line per item):
-    1. 🔥 Title — Short summary (Source)
-    """
+def _format_article_compact(counter: int, parsed: dict, emoji: str = "") -> str:
+    """Format article in compact style."""
     title = parsed.get("title", "Untitled")
     summary = parsed.get("summary", "")
     source = parsed.get("source", "unknown")
@@ -77,8 +68,28 @@ def _format_article(counter: int, parsed: dict, emoji: str = "") -> str:
     if first_sentence and not first_sentence.endswith("."):
         first_sentence = first_sentence + "."
 
-    line = f"{counter}. {emoji} {title} — {first_sentence} ({source})\n"
-    return line
+    return f"{counter}. {emoji} {title} — {first_sentence} ({source})\n"
+
+
+def _format_article_detailed(counter: int, parsed: dict, emoji: str = "") -> str:
+    """Format article in detailed style matching the premium template."""
+    title = parsed.get("title", "Untitled")
+    summary = parsed.get("summary", "")
+    why_it_matters = parsed.get("why_it_matters", "")
+    source = parsed.get("source", "unknown")
+
+    lines = [
+        f"{counter}. {emoji} {title}",
+        summary,
+    ]
+
+    if why_it_matters:
+        lines.append(f"The Shift: {why_it_matters}")
+
+    lines.append(f"Source: {source}")
+    lines.append("")
+
+    return "\n".join(lines)
 
 
 def build_newsletter(items: List[NewsItem], summaries: List[str]) -> str:
@@ -90,14 +101,6 @@ def build_newsletter(items: List[NewsItem], summaries: List[str]) -> str:
     date_str = today.strftime("%B %d, %Y")
     formatted_date = f"{day_name}, {date_str}"
 
-    # Header
-    header = (
-        "AI INTELLIGENCE DAILY BRIEF\n"
-        f"{formatted_date}\n\n"
-        "Daily intelligence covering the most important developments\n"
-        "in artificial intelligence, research, and technology.\n\n\n"
-    )
-
     # Parse and pair summaries with items
     valid_pairs = []
     for i, summary in enumerate(summaries):
@@ -106,11 +109,14 @@ def build_newsletter(items: List[NewsItem], summaries: List[str]) -> str:
             if parsed["title"]:
                 valid_pairs.append((items[i], parsed))
 
-    # If Groq is configured, attempt to generate a full editorial newsletter
+    # Try LLM-based generation first (OpenRouter or Groq)
     settings = get_settings()
-    if getattr(settings, "groq_api_key", None):
+    openrouter_key = getattr(settings, "openrouter_api_key", None)
+    groq_key = getattr(settings, "groq_api_key", None)
+
+    if openrouter_key or groq_key:
         try:
-            # Build a concise data payload for the LLM
+            # Build article list for LLM
             article_list = []
             for idx, (item, parsed) in enumerate(valid_pairs[:30], start=1):
                 article_list.append(
@@ -124,51 +130,79 @@ def build_newsletter(items: List[NewsItem], summaries: List[str]) -> str:
             user_content = (
                 f"Current date: {formatted_date}\n\n"
                 "Use the following articles to produce a single professional newsletter.\n"
-                "Please follow the exact SECTION STRUCTURE and FORMAT RULES in the system instructions.\n\n"
+                "Please follow the exact FORMAT in the system instructions.\n\n"
                 "Articles:\n\n" + "\n".join(article_list)
             )
 
-            payload = {
-                "model": settings.groq_model,
-                "temperature": 0.2,
-                "messages": [
-                    {"role": "system", "content": NEWSLETTER_GENERATION_PROMPT},
-                    {"role": "user", "content": user_content},
-                ],
-            }
+            # Try OpenRouter first, then Groq
+            api_key = None
+            api_url = None
+            model = None
 
-            with httpx.Client(timeout=60) as client:
-                resp = client.post(
-                    "https://api.groq.com/openai/v1/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {settings.groq_api_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json=payload,
+            if openrouter_key:
+                api_key = openrouter_key
+                api_url = "https://openrouter.ai/api/v1/chat/completions"
+                model = getattr(
+                    settings, "openrouter_model", "anthropic/claude-3.5-sonnet"
                 )
-                resp.raise_for_status()
-                data = resp.json()
-                generated = data["choices"][0]["message"]["content"].strip()
+            elif groq_key:
+                api_key = groq_key
+                api_url = "https://api.groq.com/openai/v1/chat/completions"
+                model = settings.groq_model
 
-            # Ensure no repeated footers in generated text
-            generated = _strip_footer(generated)
-            # Append canonical footer
-            canonical_footer = (
-                "\n\n" + "━" * 80 + "\n\n"
-                "Follow for more AI insights and engineering updates\n\n"
-                "LinkedIn:\n"
-                "linkedin.com/in/himanshu231204\n\n"
-                "GitHub:\n"
-                "github.com/himanshu231204\n\n"
-                "━" * 80
-            )
-            final_generated = generated.rstrip() + canonical_footer
-            return final_generated
+            if api_key:
+                payload = {
+                    "model": model,
+                    "temperature": 0.2,
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": NEWSLETTER_GENERATION_PROMPT.format(
+                                current_date=formatted_date
+                            ),
+                        },
+                        {"role": "user", "content": user_content},
+                    ],
+                }
+
+                headers = {
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                }
+
+                if "openrouter" in api_url:
+                    headers["HTTP-Referer"] = (
+                        "https://github.com/himanshu231204/ai-news-agent"
+                    )
+                    headers["X-Title"] = "AI News Agent"
+
+                with httpx.Client(timeout=60) as client:
+                    resp = client.post(api_url, headers=headers, json=payload)
+                    resp.raise_for_status()
+                    data = resp.json()
+                    generated = data["choices"][0]["message"]["content"].strip()
+
+                # Ensure proper footer
+                generated = _strip_footer(generated)
+                final = generated.rstrip()
+                if not final.endswith("CONNECT & BUILD"):
+                    final += (
+                        "\n\n"
+                        + "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n🔗 CONNECT & BUILD\n\nLinkedIn: linkedin.com/in/himanshu231204\nGitHub: github.com/himanshu231204\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    )
+                return final
+
         except Exception:
-            # On any failure, fall back to programmatic formatter below
             pass
 
-    # Categorize by source
+    # Fallback: Programmatic template matching the premium design
+    return _build_fallback_newsletter(valid_pairs, formatted_date)
+
+
+def _build_fallback_newsletter(valid_pairs: List, formatted_date: str) -> str:
+    """Build newsletter using the premium template format."""
+
+    # Categorize items
     industry_news = []
     research_papers = []
     opensource_tools = []
@@ -186,90 +220,105 @@ def build_newsletter(items: List[NewsItem], summaries: List[str]) -> str:
         else:
             industry_news.append(parsed)
 
-    # Build professional newsletter
-    body = header
+    # Build the premium template
+    lines = []
 
-    sep = "━" * 50 + "\n"
+    # Header
+    lines.append(
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    )
+    lines.append('💎 The Premium "Intelligence" Template')
+    lines.append("🧠 AI INTELLIGENCE DAILY BRIEF")
+    lines.append(formatted_date)
+    lines.append("")
+    lines.append("The essential update for AI Engineers and Tech Leaders.")
+    lines.append("")
+    lines.append(
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    )
+    lines.append("")
 
-    # Section 1: TOP INDUSTRY DEVELOPMENTS
+    # TOP DEVELOPMENTS
     if industry_news:
-        body += sep
-        body += "TOP INDUSTRY DEVELOPMENTS\n"
-        body += sep
+        lines.append("🔴 TOP DEVELOPMENTS")
+        lines.append("")
         counter = 1
         for article in industry_news[:6]:
-            body += _format_article(counter, article, emoji="🔥")
-            counter += 1
-        body += "\n"
+            title = article.get("title", "Untitled")
+            summary = article.get("summary", "")
+            source = article.get("source", "unknown")
+            why = article.get("why_it_matters", "")
 
-    # Section 2: RESEARCH HIGHLIGHTS
+            lines.append(f"{counter}. {title}")
+            lines.append(summary[:200] if summary else "No summary available.")
+            if why:
+                lines.append(f"The Shift: {why}")
+            lines.append(f"Source: {source}")
+            lines.append("")
+            counter += 1
+
+        lines.append(
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        )
+        lines.append("")
+
+    # RESEARCH HIGHLIGHTS
     if research_papers:
-        body += "RESEARCH HIGHLIGHTS\n"
-        body += sep
-        counter = len(industry_news) + 1
+        lines.append("🔬 RESEARCH HIGHLIGHTS")
+        lines.append("")
         for article in research_papers[:4]:
-            body += _format_article(counter, article, emoji="📚")
-            counter += 1
-        body += "\n"
+            title = article.get("title", "Untitled")
+            summary = article.get("summary", "")
+            source = article.get("source", "unknown")
 
-    # Section 3: OPEN-SOURCE & TOOLS
+            lines.append(title)
+            lines.append(summary[:200] if summary else "No summary available.")
+            lines.append(f"Source: {source}")
+            lines.append("")
+        lines.append("")
+
+    # OPEN-SOURCE & TOOLS
     if opensource_tools:
-        body += "OPEN-SOURCE & TOOLS\n"
-        body += sep
-        counter = len(industry_news) + len(research_papers) + 1
+        lines.append("🛠 OPEN-SOURCE & TOOLS")
+        lines.append("")
         for article in opensource_tools[:4]:
-            body += _format_article(counter, article, emoji="⭐")
-            counter += 1
-        body += "\n"
+            title = article.get("title", "Untitled")
+            summary = article.get("summary", "")
+            source = article.get("source", "unknown")
 
-    # Section 4: COMMUNITY SIGNALS
-    if community_signals:
-        body += "COMMUNITY SIGNALS\n"
-        body += sep
-        counter = len(industry_news) + len(research_papers) + len(opensource_tools) + 1
-        for article in community_signals[:4]:
-            body += _format_article(counter, article, emoji="💬")
-            counter += 1
-        body += "\n"
+            lines.append(title)
+            lines.append(summary[:200] if summary else "No summary available.")
+            lines.append(f"Source: {source}")
+            lines.append("")
+        lines.append("")
 
-    # Executive Insight
-    body += "EXECUTIVE INSIGHT\n"
-    body += "━" * 80 + "\n\n"
-    body += (
-        "The AI ecosystem is shifting from pure model innovation toward:\n"
-        "• production infrastructure\n"
-        "• orchestration systems\n"
-        "• evaluation reliability\n"
-        "• deployment scalability\n"
-        "• autonomous AI workflows\n\n"
-        "The next major advantage will come from building reliable,\n"
-        "production-grade AI systems at scale.\n\n\n"
+    # EXECUTIVE SUMMARY
+    lines.append(
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    )
+    lines.append("")
+    lines.append("📊 EXECUTIVE SUMMARY")
+    lines.append("")
+    lines.append(
+        "The industry is pivoting from Conversational UI → Autonomous Systems."
+    )
+    lines.append("")
+    lines.append("Priority Focus for Q2:")
+    lines.append("• High-fidelity Reasoning")
+    lines.append("• Infrastructure Reliability")
+    lines.append("• Agent Orchestration")
+    lines.append("")
+    lines.append(
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    )
+    lines.append("")
+    lines.append("🔗 CONNECT & BUILD")
+    lines.append("")
+    lines.append("LinkedIn: linkedin.com/in/himanshu231204")
+    lines.append("GitHub: github.com/himanshu231204")
+    lines.append("")
+    lines.append(
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     )
 
-    # Remove any footer-like lines accidentally present in the assembled body
-    body = _strip_footer(body)
-
-    # Footer block (single canonical footer)
-    footer = (
-        "━" * 80 + "\n\n"
-        "Follow for more AI insights and engineering updates\n\n"
-        "LinkedIn:\n"
-        "linkedin.com/in/himanshu231204\n\n"
-        "GitHub:\n"
-        "github.com/himanshu231204\n\n"
-        "━" * 80
-    )
-
-    # Compose final newsletter and ensure footer appears only once
-    final = (body + "\n" + footer).strip()
-
-    # Defensive: if the newsletter already contains repeated footer-like blocks,
-    # locate the first occurrence of the footer header and replace the remainder
-    # with a single canonical footer to avoid duplication.
-    footer_header_pattern = re.compile(r"Follow for more AI insights", re.IGNORECASE)
-    m = footer_header_pattern.search(final)
-    if m:
-        # Keep everything up to the first footer occurrence and append canonical footer
-        final = final[: m.start()].rstrip() + "\n\n" + footer
-
-    return final
+    return "\n".join(lines)
