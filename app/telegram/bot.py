@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from textwrap import wrap
 
@@ -18,6 +18,11 @@ def send_newsletter(message: str) -> None:
     Defensive: collapse repeated footer blocks to avoid spamming the footer
     across multiple chunks if the newsletter text already contains duplicates.
     """
+    # Defensive: skip empty messages
+    if not message or not message.strip():
+        logger.warning("Skipping send - empty message")
+        return
+
     def _collapse_footer(msg: str) -> str:
         key = "Follow for more AI insights"
         first = msg.find(key)
@@ -49,7 +54,9 @@ def send_newsletter(message: str) -> None:
         return
 
     url = f"https://api.telegram.org/bot{settings.telegram_bot_token}/sendMessage"
-    chunks = wrap(message, 3800, break_long_words=False, replace_whitespace=False) or [message]
+    chunks = wrap(message, 3800, break_long_words=False, replace_whitespace=False) or [
+        message
+    ]
 
     for index, chunk in enumerate(chunks, start=1):
         response = requests.post(
@@ -57,13 +64,23 @@ def send_newsletter(message: str) -> None:
             json={
                 "chat_id": settings.telegram_chat_id,
                 "text": chunk,
-                "parse_mode": "Markdown",
+                # Use plain text to avoid Markdown parsing issues
+                # "parse_mode": "Markdown",
                 "disable_web_page_preview": True,
             },
             timeout=30,
         )
         if not response.ok:
-            logger.error("Telegram send failed on chunk %s/%s: %s", index, len(chunks), response.text)
+            logger.error(
+                "Telegram send failed on chunk %s/%s: %s",
+                index,
+                len(chunks),
+                response.text,
+            )
             response.raise_for_status()
 
-    logger.info("Newsletter sent to Telegram in %s chunk(s). chars=%s", len(chunks), len(message))
+    logger.info(
+        "Newsletter sent to Telegram in %s chunk(s). chars=%s",
+        len(chunks),
+        len(message),
+    )

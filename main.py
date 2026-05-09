@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 import asyncio
@@ -21,6 +21,7 @@ async def run_newsletter() -> None:
     """Run the daily AI news workflow."""
     settings = get_settings()
     from app.config.validation import validate_settings
+
     validate_settings(settings)
     configure_langsmith(settings)
     app = build_graph()
@@ -35,29 +36,34 @@ async def run_newsletter() -> None:
         "errors": [],
         "metadata": {},
     }
-    
+
     logger.info("Starting newsletter workflow...")
     try:
         result = await app.ainvoke(
             initial_state,
             config={"configurable": {"thread_id": str(uuid4())}},
         )
-        newsletter = result.get("newsletter", "")
-        errors = result.get("errors", [])
-        
+        # LangGraph may return dict or Pydantic model - handle both
+        if hasattr(result, "newsletter"):
+            newsletter = result.newsletter or ""
+            errors = result.errors or []
+        else:
+            newsletter = result.get("newsletter", "") or ""
+            errors = result.get("errors", []) or []
+
         if errors:
             logger.warning("Workflow completed with %d errors: %s", len(errors), errors)
         else:
             logger.info("Workflow completed successfully")
-        
+
         logger.info("Newsletter generated. Length=%s", len(newsletter))
-        
+
         # Send to Telegram if configured
         if settings.telegram_bot_token and settings.telegram_chat_id:
             send_newsletter(newsletter)
-        
+
         return result
-    
+
     except Exception as e:
         logger.error("Newsletter workflow failed: %s", e, exc_info=True)
         raise
@@ -75,25 +81,27 @@ def run_workflow_once() -> None:
 def run_scheduled() -> None:
     """Run workflow on schedule (24-hour cycle)."""
     settings = get_settings()
-    
+
     # Schedule daily job at specified time (default 9:00 AM)
     schedule_daily_job(
         run_newsletter,
         hour=settings.newsletter_hour if hasattr(settings, "newsletter_hour") else 9,
-        minute=settings.newsletter_minute if hasattr(settings, "newsletter_minute") else 0
+        minute=settings.newsletter_minute
+        if hasattr(settings, "newsletter_minute")
+        else 0,
     )
-    
+
     logger.info("Scheduler running. Press Ctrl+C to exit.")
-    
+
     # Handle graceful shutdown
     def signal_handler(sig, frame):
         logger.info("Received interrupt signal. Shutting down...")
         stop_scheduler()
         sys.exit(0)
-    
+
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
-    
+
     # Keep the scheduler running
     try:
         while True:

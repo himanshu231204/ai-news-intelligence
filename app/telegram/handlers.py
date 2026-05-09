@@ -126,7 +126,7 @@ async def daily_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
         return
 
-    newsletter = result.get("newsletter", "No newsletter generated.")
+    newsletter = result.newsletter or "No newsletter generated."
 
     for part in _split_message(newsletter):
         await update.effective_message.reply_text(part)
@@ -144,8 +144,8 @@ async def trending_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         )
         return
 
-    ranked = result.get("ranked_news", [])[:5]
-    summaries = result.get("summaries", [])[:5]
+    ranked = result.ranked_news[:5]
+    summaries = result.summaries[:5]
     message = _build_section("Trending Discussions", ranked, summaries)
     for part in _split_message(message):
         await update.effective_message.reply_text(part)
@@ -164,9 +164,9 @@ async def opensource_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
 
     keywords = ["open-source", "opensource", "github", "repo", "oss", "release"]
-    ranked = result.get("ranked_news", [])
+    ranked = result.ranked_news
     matched = [item for item in ranked if _keywords_match(item, keywords)][:5]
-    summaries = result.get("summaries", [])[: len(matched)]
+    summaries = result.summaries[: len(matched)]
     message = _build_section("Open Source Launches", matched, summaries)
     for part in _split_message(message):
         await update.effective_message.reply_text(part)
@@ -185,9 +185,9 @@ async def research_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     keywords = ["research", "paper", "arxiv", "benchmark", "study", "preprint"]
-    ranked = result.get("ranked_news", [])
+    ranked = result.ranked_news
     matched = [item for item in ranked if _keywords_match(item, keywords)][:5]
-    summaries = result.get("summaries", [])[: len(matched)]
+    summaries = result.summaries[: len(matched)]
     message = _build_section("Research Highlights", matched, summaries)
     for part in _split_message(message):
         await update.effective_message.reply_text(part)
