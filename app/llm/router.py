@@ -1,9 +1,16 @@
 """LLM Router with automatic fallback handling.
 
+OPTIMIZATIONS:
+- Batch summarization (reduces API calls drastically)
+- Token optimization (only title + summary sent)
+- Gemini ONLY for final newsletter formatting
+- Multiple fallback models for OpenRouter
+- Improved retry with exponential backoff
+
 This module provides:
 - LLMRouter class with provider fallback chains
-- Summarization: Groq → OpenRouter → deterministic fallback
-- Newsletter: Gemini → template fallback
+- Batch summarization: Groq → OpenRouter (batched)
+- Newsletter: Gemini ONLY (no other providers for formatting)
 
 Key Features:
 - Automatic provider switching on failure
@@ -20,6 +27,7 @@ from typing import List, Optional
 from app.config.settings import get_settings
 from app.graph.state import NewsItem
 from app.llm import providers
+from app.llm.batch_summarizer import get_batch_summarizer
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -104,7 +112,7 @@ class LLMRouter:
     async def summarize(self, item: NewsItem) -> str:
         """Summarize a news item with fallback chain.
 
-        Flow: Groq → OpenRouter → deterministic fallback
+        Flow: Cache → Groq → OpenRouter → deterministic fallback
 
         Args:
             item: NewsItem to summarize
@@ -117,9 +125,17 @@ class LLMRouter:
         source = item.source or "unknown"
         url = item.url or ""
 
+        # Check cache first
+        from app.utils.summary_cache import get_summary_cache
+
+        cache = get_summary_cache()
+        cached = cache.get(title, source)
+        if cached:
+            return cached
+
         prompt = f"Article title: {title}\nSource: {source}\nURL: {url}\n"
 
-        # Try Groq first (primary)
+        # Try Groq first (primary - better rate limits on free tier)
         if self.settings.groq_api_key:
             try:
                 result = await providers.call_groq(
@@ -129,11 +145,13 @@ class LLMRouter:
                 )
                 if result:
                     logger.info(f"Summarized via Groq: {title[:50]}...")
+                    # Cache the result
+                    cache.set(title, source, result)
                     return result
             except Exception as e:
                 logger.warning(f"Groq failed for '{title}': {e}")
 
-        # Fallback to OpenRouter (deepseek)
+        # Fallback to OpenRouter
         if self.settings.openrouter_api_key:
             try:
                 result = await providers.call_openrouter(
@@ -145,6 +163,8 @@ class LLMRouter:
                     logger.info(
                         f"Summarized via OpenRouter (fallback): {title[:50]}..."
                     )
+                    # Cache the result
+                    cache.set(title, source, result)
                     return result
             except Exception as e:
                 logger.warning(f"OpenRouter failed for '{title}': {e}")
@@ -156,7 +176,10 @@ class LLMRouter:
         return self._generate_fallback_summary(item)
 
     async def summarize_batch(self, items: List[NewsItem]) -> List[str]:
-        """Summarize multiple news items with rate limiting.
+        """Summarize multiple news items using BATCH processing.
+
+        OPTIMIZATION: Uses batch summarization instead of per-article calls.
+        This reduces API calls from N to N/batch_size.
 
         Args:
             items: List of NewsItems to summarize
@@ -164,14 +187,14 @@ class LLMRouter:
         Returns:
             List of formatted summary strings
         """
-        summaries = []
+        if not items:
+            return []
 
-        for item in items:
-            summary = await self.summarize(item)
-            summaries.append(summary)
+        logger.info(f"Using batch summarization for {len(items)} items")
 
-            # Rate limiting between requests
-            await asyncio.sleep(0.3)
+        # Use batch summarizer (reduces API calls drastically)
+        batch_summarizer = get_batch_summarizer()
+        summaries = await batch_summarizer.summarize_batch(items)
 
         return summaries
 
@@ -181,9 +204,12 @@ class LLMRouter:
         summaries: List[str],
         formatted_date: str,
     ) -> str:
-        """Generate newsletter with Gemini fallback to template.
+        """Generate newsletter with Gemini ONLY for final formatting.
 
-        Flow: Gemini → template fallback
+        OPTIMIZATION: Gemini is used ONLY for final newsletter formatting.
+        Not used for: filtering, ranking, per-article summaries.
+
+        Flow: Gemini (primary) → OpenRouter (fallback) → template (final)
 
         Args:
             items: List of ranked news items
@@ -204,20 +230,32 @@ class LLMRouter:
                 if parsed["title"]:
                     valid_pairs.append((items[i], parsed))
 
-        # Try Gemini first
+        # Try Gemini first (ONLY used for final formatting)
         if self.settings.gemini_api_key:
             try:
                 newsletter = await self._generate_with_gemini(
                     valid_pairs, formatted_date
                 )
                 if newsletter:
-                    logger.info("Newsletter generated via Gemini")
+                    logger.info("Newsletter generated via Gemini (final formatting)")
                     return newsletter
             except Exception as e:
                 logger.warning(f"Gemini newsletter generation failed: {e}")
 
-        # Fallback to template
-        logger.info("Using template fallback for newsletter")
+        # Fallback to OpenRouter
+        if self.settings.openrouter_api_key:
+            try:
+                newsletter = await self._generate_with_openrouter(
+                    valid_pairs, formatted_date
+                )
+                if newsletter:
+                    logger.info("Newsletter generated via OpenRouter (fallback)")
+                    return newsletter
+            except Exception as e:
+                logger.warning(f"OpenRouter newsletter generation failed: {e}")
+
+        # Final fallback: template-based newsletter
+        logger.warning("All LLM providers failed. Using template fallback")
         return _build_fallback_newsletter(valid_pairs, formatted_date)
 
     async def _generate_with_gemini(
@@ -277,16 +315,105 @@ class LLMRouter:
 
             result = _strip_footer(result)
 
-            # Ensure proper footer matches new format
-            if "CONNECT WITH ME" not in result and "CONNECT" not in result:
+            # Ensure proper footer with links is present
+            has_linkedin = "linkedin.com/in/himanshu231204" in result
+            has_github = "github.com/himanshu231204" in result
+
+            if not has_linkedin or not has_github:
+                # Remove any incomplete footer and add proper one
+                lines = result.split("\n")
+                cutoff = len(lines)
+                for i, line in enumerate(lines):
+                    if "CONNECT" in line.upper() or "STAY AHEAD" in line.upper():
+                        cutoff = i
+                        break
+
+                result = "\n".join(lines[:cutoff])
+
                 result += (
-                    "\n\n"
-                    + "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                    + "🔗 CONNECT WITH ME\n"
-                    + "LinkedIn: linkedin.com/in/himanshu231204\n"
-                    + "GitHub: github.com/himanshu231204\n\n"
-                    + "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                    + "💡 Stay ahead of AI! See you tomorrow! 🚀"
+                    "\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                    "🔗 CONNECT WITH ME\n"
+                    "• LinkedIn: https://linkedin.com/in/himanshu231204\n"
+                    "• GitHub: https://github.com/himanshu231204\n\n"
+                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                    "💡 Stay ahead of AI! See you tomorrow! 🚀"
+                )
+
+            return result.rstrip()
+
+        return None
+
+    async def _generate_with_openrouter(
+        self,
+        valid_pairs: List[tuple],
+        formatted_date: str,
+    ) -> Optional[str]:
+        """Generate newsletter using OpenRouter API.
+
+        Args:
+            valid_pairs: List of (item, parsed_summary) tuples
+            formatted_date: Date string for header
+
+        Returns:
+            Generated newsletter or None
+        """
+        # Build article list (limited to 30 for token optimization)
+        article_list = []
+        for idx, (item, parsed) in enumerate(valid_pairs[:30], start=1):
+            article_list.append(
+                f"{idx}. Title: {parsed.get('title', '')}\n"
+                f"URL: {item.url or ''}\n"
+                f"Source: {parsed.get('source', '')}\n"
+                f"Summary: {parsed.get('summary', '')}\n"
+                f"Why it matters: {parsed.get('why_it_matters', '')}\n"
+            )
+
+        # Format system prompt
+        system_prompt = NEWSLETTER_SYSTEM.format(
+            current_date=formatted_date,
+        )
+
+        user_content = (
+            f"Current date: {formatted_date}\n\n"
+            "Use the following articles to produce a single professional newsletter.\n"
+            "Please follow the exact FORMAT in the system instructions.\n\n"
+            "Articles:\n\n" + "\n".join(article_list)
+        )
+
+        result = await providers.call_openrouter(
+            prompt=user_content,
+            system=system_prompt,
+            model=self.settings.openrouter_model,
+            temperature=0.2,
+        )
+
+        if result:
+            # Clean up any footer artifacts
+            from app.newsletter.generator import _strip_footer
+
+            result = _strip_footer(result)
+
+            # Ensure proper footer with links is present
+            has_linkedin = "linkedin.com/in/himanshu231204" in result
+            has_github = "github.com/himanshu231204" in result
+
+            if not has_linkedin or not has_github:
+                lines = result.split("\n")
+                cutoff = len(lines)
+                for i, line in enumerate(lines):
+                    if "CONNECT" in line.upper() or "STAY AHEAD" in line.upper():
+                        cutoff = i
+                        break
+
+                result = "\n".join(lines[:cutoff])
+
+                result += (
+                    "\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                    "🔗 CONNECT WITH ME\n"
+                    "• LinkedIn: https://linkedin.com/in/himanshu231204\n"
+                    "• GitHub: https://github.com/himanshu231204\n\n"
+                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                    "💡 Stay ahead of AI! See you tomorrow! 🚀"
                 )
 
             return result.rstrip()

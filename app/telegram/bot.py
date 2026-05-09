@@ -64,8 +64,7 @@ def send_newsletter(message: str) -> None:
             json={
                 "chat_id": settings.telegram_chat_id,
                 "text": chunk,
-                # Use plain text to avoid Markdown parsing issues
-                # "parse_mode": "Markdown",
+                "parse_mode": "Markdown",
                 "disable_web_page_preview": True,
             },
             timeout=30,

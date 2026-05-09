@@ -13,11 +13,15 @@ faiss-cpu>=1.8.0.post1
 httpx>=0.27.0
 requests>=2.33.0
 google-generativeai>=0.8.0
+google-api-python-client>=2.100.0
+google-auth>=2.0.0
+google-auth-httplib2>=0.1.0
 feedparser>=6.0.11
 python-telegram-bot>=21.0.0
 apscheduler>=3.10.4
 sentence-transformers>=2.2.0
 praw>=7.6.0
+agentrouter>=0.0.1
 
 # Testing
 pytest>=8.3.0

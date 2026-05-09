@@ -336,13 +336,13 @@ def _build_fallback_newsletter(valid_pairs: List, formatted_date: str) -> str:
         lines.append("")
 
     # Footer
-    lines.append("━━━━━━━━━")
+    lines.append("━━━━━━━━━━")
     lines.append("")
     lines.append("🔗 CONNECT WITH ME")
     lines.append("• [LinkedIn](https://linkedin.com/in/himanshu231204)")
     lines.append("• [GitHub](https://github.com/himanshu231204)")
     lines.append("")
-    lines.append("━━━━━━━━━━━")
+    lines.append("━━━━━━━━━")
     lines.append("💡 Stay ahead of AI! See you tomorrow! 🚀")
 
     return "\n".join(lines)

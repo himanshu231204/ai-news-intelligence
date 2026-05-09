@@ -2,8 +2,14 @@
 
 Providers:
 - Groq: Primary provider (llama-3.3-70b-versatile)
-- OpenRouter: Fallback provider (deepseek-chat-v3-0324:free)
+- OpenRouter: Fallback with multiple free models
 - Gemini: Newsletter provider (gemini-2.5-flash)
+
+OPTIMIZATIONS:
+- Multiple fallback models for OpenRouter
+- Improved exponential backoff
+- Rate limit handling
+- Token optimization
 
 Each function includes:
 - Async httpx client
@@ -16,7 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Optional
+from typing import Optional, List
 
 import httpx
 
@@ -27,7 +33,17 @@ logger = get_logger(__name__)
 
 # Default retry configuration
 DEFAULT_MAX_RETRIES = 3
-DEFAULT_INITIAL_DELAY = 1.0
+DEFAULT_INITIAL_DELAY = 2.0  # Increased from 1.0 for better rate limit handling
+MAX_INITIAL_DELAY = 8.0  # Cap the exponential backoff
+
+# OpenRouter fallback models (tried in order - verified working free models)
+OPENROUTER_FALLBACK_MODELS: List[str] = [
+    "meta-llama/llama-3.1-8b-instruct:free",
+    "mistralai/mistral-7b-instruct:free",
+    "anthropic/claude-3-haiku:free",
+    "google/gemma-2-9b-it:free",
+    "deepseek/deepseek-chat:free",
+]
 
 
 async def call_groq(
@@ -37,7 +53,9 @@ async def call_groq(
     max_retries: int = DEFAULT_MAX_RETRIES,
     temperature: float = 0.2,
 ) -> Optional[str]:
-    """Call Groq API with retry logic.
+    """Call Groq API with improved retry logic and exponential backoff.
+
+    OPTIMIZATION: Better rate limit handling with capped exponential backoff.
 
     Args:
         prompt: User prompt content
@@ -91,7 +109,7 @@ async def call_groq(
             last_exception = e
             status_code = e.response.status_code
 
-            # Rate limit - retry with backoff
+            # Rate limit - retry with capped exponential backoff
             if status_code == 429:
                 logger.warning(
                     "Groq rate limited (attempt %d/%d). Retrying in %.1fs...",
@@ -121,7 +139,7 @@ async def call_groq(
 
         if attempt < max_retries - 1:
             await asyncio.sleep(delay)
-            delay *= 2  # Exponential backoff
+            delay = min(delay * 2, MAX_INITIAL_DELAY)  # Cap at MAX_INITIAL_DELAY
 
     logger.error(f"Groq API failed after {max_retries} attempts: {last_exception}")
     return None
@@ -133,101 +151,120 @@ async def call_openrouter(
     model: str = "deepseek/deepseek-chat-v3-0324:free",
     max_retries: int = DEFAULT_MAX_RETRIES,
     temperature: float = 0.2,
+    use_fallback_models: bool = True,
 ) -> Optional[str]:
-    """Call OpenRouter API with retry logic.
+    """Call OpenRouter API with retry logic and fallback models.
+
+    OPTIMIZATION: Tries multiple free models if primary fails.
 
     Args:
         prompt: User prompt content
         system: System prompt (optional)
         model: Model identifier (default: deepseek/deepseek-chat-v3-0324:free)
-        max_retries: Maximum retry attempts
+        max_retries: Maximum retry attempts per model
         temperature: Sampling temperature
+        use_fallback_models: Try fallback models if primary fails
 
     Returns:
         Generated text or None on failure
     """
     settings = get_settings()
     api_key = settings.openrouter_api_key
-    model = settings.openrouter_model  # Use settings model instead of parameter
+
+    # Use settings model as primary
+    primary_model = settings.openrouter_model or model
 
     if not api_key:
         logger.warning("OpenRouter API key not configured")
         return None
 
-    logger.debug(f"OpenRouter using model: {model}")
-    messages = []
-    if system:
-        messages.append({"role": "system", "content": system})
-    messages.append({"role": "user", "content": prompt})
+    # Build model list: primary + fallbacks
+    models_to_try = [primary_model]
+    if use_fallback_models:
+        for fallback_model in OPENROUTER_FALLBACK_MODELS:
+            if fallback_model not in models_to_try:
+                models_to_try.append(fallback_model)
 
-    payload = {
-        "model": model,
-        "temperature": temperature,
-        "messages": messages,
-    }
+    logger.debug(f"OpenRouter will try models: {models_to_try[:3]}...")
 
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://github.com/himanshu231204/ai-news-agent",
-        "X-Title": "AI News Agent",
-    }
+    # Try each model in sequence
+    for model_idx, current_model in enumerate(models_to_try):
+        logger.info(
+            f"OpenRouter trying model {model_idx + 1}/{len(models_to_try)}: {current_model}"
+        )
 
-    delay = DEFAULT_INITIAL_DELAY
-    last_exception = None
+        messages = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
 
-    for attempt in range(max_retries):
-        try:
-            async with httpx.AsyncClient(timeout=30) as client:
-                response = await client.post(
-                    "https://openrouter.ai/api/v1/chat/completions",
-                    headers=headers,
-                    json=payload,
-                )
-                response.raise_for_status()
-                data = response.json()
-                content = data["choices"][0]["message"]["content"].strip()
-                logger.debug(f"OpenRouter API call successful on attempt {attempt + 1}")
-                return content
+        payload = {
+            "model": current_model,
+            "temperature": temperature,
+            "messages": messages,
+        }
 
-        except httpx.HTTPStatusError as e:
-            last_exception = e
-            status_code = e.response.status_code
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/himanshu231204/ai-news-agent",
+            "X-Title": "AI News Agent",
+        }
 
-            if status_code == 429:
+        delay = DEFAULT_INITIAL_DELAY
+        last_exception = None
+
+        for attempt in range(max_retries):
+            try:
+                async with httpx.AsyncClient(timeout=30) as client:
+                    response = await client.post(
+                        "https://openrouter.ai/api/v1/chat/completions",
+                        headers=headers,
+                        json=payload,
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+                    content = data["choices"][0]["message"]["content"].strip()
+                    logger.info(f"OpenRouter succeeded with model: {current_model}")
+                    return content
+
+            except httpx.HTTPStatusError as e:
+                last_exception = e
+                status_code = e.response.status_code
+
+                if status_code == 429:
+                    # Rate limited - try next model immediately
+                    logger.warning(
+                        f"OpenRouter rate limited on model {current_model}. "
+                        f"Trying next model..."
+                    )
+                    break  # Break retry loop, try next model
+                else:
+                    logger.warning(
+                        "OpenRouter HTTP error %d (attempt %d/%d): %s",
+                        status_code,
+                        attempt + 1,
+                        max_retries,
+                        e,
+                    )
+
+            except Exception as e:
+                last_exception = e
                 logger.warning(
-                    "OpenRouter rate limited (attempt %d/%d). Retrying in %.1fs...",
-                    attempt + 1,
-                    max_retries,
-                    delay,
-                )
-            else:
-                logger.warning(
-                    "OpenRouter HTTP error %d (attempt %d/%d): %s. Retrying in %.1fs...",
-                    status_code,
+                    "OpenRouter request failed (attempt %d/%d): %s",
                     attempt + 1,
                     max_retries,
                     e,
-                    delay,
                 )
 
-        except Exception as e:
-            last_exception = e
-            logger.warning(
-                "OpenRouter request failed (attempt %d/%d): %s. Retrying in %.1fs...",
-                attempt + 1,
-                max_retries,
-                e,
-                delay,
-            )
+            if attempt < max_retries - 1:
+                await asyncio.sleep(delay)
+                delay = min(delay * 2, MAX_INITIAL_DELAY)  # Cap the delay
 
-        if attempt < max_retries - 1:
-            await asyncio.sleep(delay)
-            delay *= 2
+        # If we got here, this model failed - try next one
+        logger.warning(f"Model {current_model} failed, trying next fallback...")
 
-    logger.error(
-        f"OpenRouter API failed after {max_retries} attempts: {last_exception}"
-    )
+    logger.error("All OpenRouter models exhausted")
     return None
 
 

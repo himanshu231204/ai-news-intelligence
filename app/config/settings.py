@@ -53,6 +53,18 @@ class Settings(BaseSettings):
     use_embeddings: bool = True
     use_postgres_checkpoint: bool = False
 
+    # Google Drive Integration
+    google_service_account_json: str = ""
+    google_drive_folder_id: str = ""
+    enable_google_drive: bool = False
+
+    # AgentRouter Configuration
+    agentrouter_api_key: str = ""
+    agentrouter_model: str = "usf-mini"
+
+    # Run mode detection
+    is_scheduled_run: bool = False
+
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
     )

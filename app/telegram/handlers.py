@@ -93,6 +93,9 @@ async def _run_workflow_state() -> dict:
         "ranked_news": [],
         "summaries": [],
         "newsletter": "",
+        "linkedin_newsletter": "",
+        "google_doc_link": "",
+        "linkedin_saved": False,
         "errors": [],
         "metadata": {},
     }
@@ -180,8 +183,9 @@ async def developerinfo_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 async def daily_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     _ = context
-    await update.effective_message.reply_text(
-        "Generating your AI Daily Brief. Please wait..."
+    # Send progress messages
+    msg = await update.effective_message.reply_text(
+        "🧠 Collecting AI news from sources..."
     )
     try:
         result = await _run_workflow_state()
@@ -192,7 +196,13 @@ async def daily_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
         return
 
+    # Update to processing message
+    await msg.edit_text("✍️ Generating newsletter...")
+
     newsletter = result.get("newsletter", "") or "No newsletter generated."
+
+    # Delete the processing message
+    await msg.delete()
 
     for part in _split_message(newsletter):
         await update.effective_message.reply_text(part)
@@ -200,7 +210,8 @@ async def daily_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def trending_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     _ = context
-    await update.effective_message.reply_text("Building trending digest...")
+    # Send progress message
+    msg = await update.effective_message.reply_text("🔍 Collecting trending AI news...")
     try:
         result = await _run_workflow_state()
     except Exception as exc:  # noqa: BLE001
@@ -210,16 +221,26 @@ async def trending_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         )
         return
 
+    # Update to processing message
+    await msg.edit_text("📊 Building trending digest...")
+
     ranked = result.get("ranked_news", [])[:5]
     summaries = result.get("summaries", [])[:5]
     message = _build_section("Trending Discussions", ranked, summaries)
+
+    # Delete processing message
+    await msg.delete()
+
     for part in _split_message(message):
         await update.effective_message.reply_text(part)
 
 
 async def opensource_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     _ = context
-    await update.effective_message.reply_text("Building open-source watchlist...")
+    # Send progress message
+    msg = await update.effective_message.reply_text(
+        "🛠️ Collecting open-source projects..."
+    )
     try:
         result = await _run_workflow_state()
     except Exception as exc:  # noqa: BLE001
@@ -229,18 +250,26 @@ async def opensource_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
         return
 
+    # Update to processing message
+    await msg.edit_text("📦 Building open-source watchlist...")
+
     keywords = ["open-source", "opensource", "github", "repo", "oss", "release"]
     ranked = result.get("ranked_news", [])
     matched = [item for item in ranked if _keywords_match(item, keywords)][:5]
     summaries = result.get("summaries", [])[: len(matched)]
     message = _build_section("Open Source Launches", matched, summaries)
+
+    # Delete processing message
+    await msg.delete()
+
     for part in _split_message(message):
         await update.effective_message.reply_text(part)
 
 
 async def research_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     _ = context
-    await update.effective_message.reply_text("Building research highlights...")
+    # Send progress message
+    msg = await update.effective_message.reply_text("📚 Collecting research papers...")
     try:
         result = await _run_workflow_state()
     except Exception as exc:  # noqa: BLE001
@@ -250,11 +279,18 @@ async def research_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         )
         return
 
+    # Update to processing message
+    await msg.edit_text("🔬 Building research highlights...")
+
     keywords = ["research", "paper", "arxiv", "benchmark", "study", "preprint"]
     ranked = result.get("ranked_news", [])
     matched = [item for item in ranked if _keywords_match(item, keywords)][:5]
     summaries = result.get("summaries", [])[: len(matched)]
     message = _build_section("Research Highlights", matched, summaries)
+
+    # Delete processing message
+    await msg.delete()
+
     for part in _split_message(message):
         await update.effective_message.reply_text(part)
 

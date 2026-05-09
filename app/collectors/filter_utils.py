@@ -1,7 +1,9 @@
 """Filter utilities for AI news articles.
 
 This module provides filtering logic based on quality, relevance,
-and importance scoring for the news collection pipeline.
+keyword matching, and importance scoring for the news collection pipeline.
+
+Key optimization: Keyword filtering runs BEFORE LLM calls to reduce API usage.
 """
 
 from __future__ import annotations
@@ -15,6 +17,24 @@ MIN_TITLE_LENGTH = 10
 MAX_TITLE_LENGTH = 300
 MIN_SUMMARY_LENGTH = 20
 MIN_IMPORTANCE_SCORE = 0.5
+
+
+# Import keyword filter for early-stage filtering
+def filter_by_keywords_early(items: List[NewsItem]) -> List[NewsItem]:
+    """Apply keyword filtering before LLM processing.
+
+    This is the FIRST filter in the pipeline - runs before quality filtering.
+    Uses local keyword matching (no LLM needed) to remove non-AI content.
+
+    Args:
+        items: List of NewsItems to filter
+
+    Returns:
+        Filtered list of AI-related NewsItems
+    """
+    from app.collectors.keyword_filter import filter_by_keywords
+
+    return filter_by_keywords(items)
 
 
 def is_low_quality(item: NewsItem) -> bool:

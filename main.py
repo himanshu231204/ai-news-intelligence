@@ -22,6 +22,14 @@ async def run_newsletter() -> None:
     settings = get_settings()
     from app.config.validation import validate_settings
 
+    # Clean up expired summary cache
+    from app.utils.summary_cache import get_summary_cache
+
+    cache = get_summary_cache()
+    cleaned = cache.cleanup()
+    if cleaned > 0:
+        logger.info(f"Cleaned up {cleaned} expired cache entries")
+
     validate_settings(settings)
     configure_langsmith(settings)
     app = build_graph()
@@ -33,6 +41,9 @@ async def run_newsletter() -> None:
         "ranked_news": [],
         "summaries": [],
         "newsletter": "",
+        "linkedin_newsletter": "",
+        "google_doc_link": "",
+        "linkedin_saved": False,
         "errors": [],
         "metadata": {},
     }
@@ -82,6 +93,10 @@ def run_scheduled() -> None:
     """Run workflow on schedule (24-hour cycle)."""
     settings = get_settings()
 
+    # Mark as scheduled run for LinkedIn newsletter generation
+    settings.is_scheduled_run = True
+    logger.info("Running in scheduled mode - LinkedIn newsletter will be generated")
+
     # Schedule daily job at specified time (default 9:00 AM)
     schedule_daily_job(
         run_newsletter,
@@ -130,7 +145,20 @@ if __name__ == "__main__":
         default="workflow",
         help="workflow: run one newsletter cycle, bot: start Telegram command bot, scheduler: run on 24-hour cycle",
     )
+    parser.add_argument(
+        "--scheduled",
+        action="store_true",
+        help="Mark this run as a scheduled run (enables LinkedIn newsletter generation)",
+    )
     args = parser.parse_args()
+
+    # Set scheduled mode if flag is passed
+    if args.scheduled:
+        settings = get_settings()
+        settings.is_scheduled_run = True
+        logger.info(
+            "Running with --scheduled flag - LinkedIn newsletter will be generated"
+        )
 
     if args.mode == "bot":
         run_telegram_bot_mode()

@@ -37,6 +37,11 @@ class NewsState(BaseModel):
     ranked_news: List[NewsItem] = Field(default_factory=list)
     summaries: List[str] = Field(default_factory=list)
     newsletter: str = ""
+    # LinkedIn newsletter fields
+    linkedin_newsletter: str = ""
+    google_doc_link: str = ""
+    linkedin_saved: bool = False
+    # Error tracking
     errors: List[str] = Field(default_factory=list)
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
