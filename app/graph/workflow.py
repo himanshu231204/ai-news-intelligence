@@ -51,9 +51,12 @@ def _agentrouter_succeeded(state: NewsState) -> str:
     metadata = state.metadata or {}
     workflow_method = metadata.get("workflow_method", "")
 
-    # If AgentRouter succeeded and produced newsletter, continue
+    # If AgentRouter succeeded and produced newsletter, route based on schedule mode.
     if workflow_method == "agentrouter" and state.newsletter:
-        return "continue"
+        settings = get_settings()
+        if settings.is_scheduled_run:
+            return "continue_with_linkedin"
+        return "continue_without_linkedin"
 
     # Otherwise, use LLM fallback
     return "llm_fallback"
@@ -121,7 +124,8 @@ def build_workflow() -> StateGraph:
         "agent_workflow",
         _agentrouter_succeeded,
         {
-            "continue": "generate_linkedin",  # AgentRouter succeeded
+            "continue_with_linkedin": "generate_linkedin",  # scheduled run
+            "continue_without_linkedin": "store_results",  # non-scheduled run
             "llm_fallback": "merge_results",  # AgentRouter failed, use LLM
         },
     )
@@ -137,21 +141,21 @@ def build_workflow() -> StateGraph:
     graph.add_edge("filter_low_quality", "rank_news")
     graph.add_edge("rank_news", "summarize_news")
     graph.add_edge("summarize_news", "generate_newsletter")
-    graph.add_edge("generate_newsletter", "generate_linkedin")
 
     # ==========================================================================
     # LINKEDIN GENERATION (common for both paths)
     # ==========================================================================
     graph.add_conditional_edges(
-        "generate_linkedin",
+        "generate_newsletter",
         _should_generate_linkedin,
         {
-            "generate_linkedin": "save_linkedin",
+            "generate_linkedin": "generate_linkedin",
             "skip_linkedin": "store_results",
         },
     )
 
     # LinkedIn workflow (only runs in scheduled mode)
+    graph.add_edge("generate_linkedin", "save_linkedin")
     graph.add_edge("save_linkedin", "store_results")
 
     # Final edges

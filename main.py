@@ -10,7 +10,6 @@ from app.graph.builder import build_graph
 from app.config.settings import get_settings
 from app.observability.langsmith import configure_langsmith
 from app.telegram.handlers import run_telegram_bot
-from app.telegram.bot import send_newsletter
 from app.scheduler.jobs import schedule_daily_job, stop_scheduler
 from app.utils.logger import get_logger
 
@@ -68,10 +67,6 @@ async def run_newsletter() -> None:
             logger.info("Workflow completed successfully")
 
         logger.info("Newsletter generated. Length=%s", len(newsletter))
-
-        # Send to Telegram if configured
-        if settings.telegram_bot_token and settings.telegram_chat_id:
-            send_newsletter(newsletter)
 
         return result
 
